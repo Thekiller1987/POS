@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  <rect width="480" height="480" x="16" y="16" rx="112" fill="none" stroke="#1e293b" stroke-width="8" opacity="0.5" />
+  
+  <!-- POS Terminal & Cart Icon -->
+  <g transform="translate(10, 10)">
+    <!-- Glow Effect under Cart -->
+    <path d="M160 144h248l-36 180H200L160 144z" fill="url(#iconGrad)" opacity="0.15" filter="url(#glow)" />
+    
+    <!-- Cart Base Wire -->
+    <path d="M120 96h40l40 220h200l40-200H180" fill="none" stroke="url(#iconGrad)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <!-- Wheels -->
+    <circle cx="220" cy="370" r="32" fill="#38bdf8" />
+    <circle cx="220" cy="370" r="12" fill="#ffffff" />
+    <circle cx="360" cy="370" r="32" fill="#38bdf8" />
+    <circle cx="360" cy="370" r="12" fill="#ffffff" />
+    
+    <!-- Accent Lightning Bolt / Growth Arrow inside Cart -->
+    <path d="M260 160l60 60-30 20 60 40-80-10 20-30-30-80z" fill="#38bdf8" opacity="0.9" />
+  </g>
+</svg>

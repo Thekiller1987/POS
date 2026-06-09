@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PosRápido</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#0b0f19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PosRápido">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="dark-theme">
+  
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
+  
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <p>Cargando PosRápido...</p>
+  </div>
+
+  <!-- AUTH VIEW (Login / Initial Setup) -->
+  <div id="auth-view" class="view auth-view active">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="logo-container">
+          <span class="material-icons logo-icon">shopping_cart</span>
+        </div>
+        <h1>PosRápido</h1>
+        <p id="auth-subtitle">Inicia sesión para continuar</p>
+      </div>
+      
+      <form id="auth-form" autocomplete="off">
+        <div class="input-group">
+          <label for="auth-username">Usuario</label>
+          <div class="input-wrapper">
+            <span class="material-icons input-icon">person</span>
+            <input type="text" id="auth-username" required placeholder="Ej: admin" autocomplete="username">
+          </div>
+        </div>
+        
+        <div class="input-group">
+          <label for="auth-password">Contraseña</label>
+          <div class="input-wrapper">
+            <span class="material-icons input-icon">lock</span>
+            <input type="password" id="auth-password" required placeholder="Mínimo 4 dígitos" minlength="4" autocomplete="current-password">
+          </div>
+        </div>
+        
+        <button type="submit" id="auth-btn" class="btn btn-primary btn-block">
+          <span>Ingresar</span>
+          <span class="material-icons">login</span>
+        </button>
+      </form>
+      
+      <div class="auth-footer">
+        <button type="button" id="toggle-auth-mode" class="btn-link">¿Primera vez? Crear Administrador</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP SHELL (Protected views) -->
+  <div id="app-shell" class="app-shell hidden">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <span class="material-icons header-logo">shopping_cart</span>
+        <div>
+          <h2>PosRápido</h2>
+          <div class="connection-status online">
+            <span class="status-dot"></span>
+            <span id="connection-text">En línea</span>
+          </div>
+        </div>
+      </div>
+      
+      <button id="logout-btn" class="btn-icon" title="Cerrar Sesión">
+        <span class="material-icons">logout</span>
+      </button>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      
+      <!-- VIEW: POS / VENDER -->
+      <section id="pos-view" class="view-content hidden">
+        <div class="pos-container">
+          <!-- Search & Filter -->
+          <div class="search-filter-section">
+            <div class="search-bar">
+              <span class="material-icons">search</span>
+              <input type="text" id="pos-search" placeholder="Buscar producto...">
+              <button id="clear-pos-search" class="btn-icon hidden">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+            
+            <div class="category-chips-wrapper">
+              <div id="category-chips" class="category-chips">
+                <button class="chip active" data-category="all">Todos</button>
+                <!-- Dynamic categories go here -->
+              </div>
+            </div>
+          </div>
+          
+          <!-- Products Grid -->
+          <div id="pos-products-grid" class="pos-products-grid">
+            <!-- Dynamic products will populate here -->
+            <div class="empty-state">
+              <span class="material-icons">inventory_2</span>
+              <p>No hay productos en inventario.</p>
+              <button class="btn btn-secondary btn-sm navigate-btn" data-target="inventory">Agregar Producto</button>
+            </div>
+          </div>
+          
+          <!-- Floating Cart Trigger -->
+          <button id="cart-trigger" class="cart-trigger">
+            <div class="cart-trigger-info">
+              <span class="material-icons">shopping_basket</span>
+              <span id="cart-badge" class="cart-badge">0</span>
+            </div>
+            <div class="cart-trigger-total">
+              <span>Total:</span>
+              <strong id="cart-trigger-total-value">$0.00</strong>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <!-- VIEW: INVENTARIO -->
+      <section id="inventory-view" class="view-content hidden">
+        <div class="inventory-container">
+          <div class="inventory-header">
+            <h3>Gestión de Inventario</h3>
+            <button id="add-product-btn" class="btn btn-primary">
+              <span class="material-icons">add</span>
+              <span>Nuevo Producto</span>
+            </button>
+          </div>
+
+          <!-- Segmented subtab switcher -->
+          <div class="view-toggle">
+            <button class="toggle-btn active" data-subview="products">Productos</button>
+            <button class="toggle-btn" data-subview="users">Usuarios</button>
+          </div>
+
+          <!-- Subview: Products Inventory -->
+          <div id="products-subview" class="subview-content">
+            <div class="search-bar">
+              <span class="material-icons">search</span>
+              <input type="text" id="inventory-search" placeholder="Buscar por nombre o categoría...">
+            </div>
+            <div id="inventory-list" class="inventory-list">
+              <!-- Dynamic items go here -->
+            </div>
+          </div>
+
+          <!-- Subview: Users List -->
+          <div id="users-subview" class="subview-content hidden">
+            <div class="users-list-header">
+              <h4>Usuarios en el Sistema</h4>
+              <button id="add-user-btn" class="btn btn-primary btn-sm">
+                <span class="material-icons">person_add</span>
+                <span>Nuevo Usuario</span>
+              </button>
+            </div>
+            <div id="users-list" class="users-list">
+              <!-- Dynamic users list go here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: HISTORIAL -->
+      <section id="history-view" class="view-content hidden">
+        <div class="history-container">
+          <!-- Segmented subtab switcher -->
+          <div class="view-toggle">
+            <button class="toggle-btn active" data-subview="sales">Registro de Ventas</button>
+            <button class="toggle-btn" data-subview="reports">Productos Vendidos</button>
+          </div>
+
+          <!-- Subview: Sales Registration Logs -->
+          <div id="sales-subview" class="subview-content">
+            <!-- Dashboard Summary -->
+            <div class="dashboard-grid">
+              <div class="dashboard-card card-revenue">
+                <div class="card-icon"><span class="material-icons">payments</span></div>
+                <div class="card-info">
+                  <span>Ventas del Día</span>
+                  <h3 id="dash-revenue">$0.00</h3>
+                </div>
+              </div>
+              <div class="dashboard-card card-profit">
+                <div class="card-icon"><span class="material-icons">trending_up</span></div>
+                <div class="card-info">
+                  <span>Ganancia Estimada</span>
+                  <h3 id="dash-profit">$0.00</h3>
+                </div>
+              </div>
+              <div class="dashboard-card card-transactions">
+                <div class="card-icon"><span class="material-icons">receipt_long</span></div>
+                <div class="card-info">
+                  <span>Transacciones</span>
+                  <h3 id="dash-sales-count">0</h3>
+                </div>
+              </div>
+            </div>
+
+            <!-- History Filter -->
+            <div class="history-header">
+              <h3>Registro de Ventas</h3>
+              <div class="select-wrapper">
+                <select id="history-date-filter">
+                  <option value="today">Hoy</option>
+                  <option value="yesterday">Ayer</option>
+                  <option value="7days">Últimos 7 días</option>
+                  <option value="all">Todas las ventas</option>
+                </select>
+                <span class="material-icons select-arrow">arrow_drop_down</span>
+              </div>
+            </div>
+
+            <!-- Sales List -->
+            <div id="history-sales-list" class="history-sales-list">
+              <!-- Dynamic transactions go here -->
+            </div>
+          </div>
+
+          <!-- Subview: Products Sold Reports -->
+          <div id="reports-subview" class="subview-content hidden">
+            <div class="reports-header">
+              <h3>Productos Más Vendidos</h3>
+              <p>Resumen de unidades vendidas y ganancia neta total.</p>
+            </div>
+            <div id="reports-products-list" class="reports-products-list">
+              <!-- Dynamic sold items rank reports go here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="app-nav">
+      <button class="nav-item active" data-target="pos">
+        <span class="material-icons nav-icon">shopping_bag</span>
+        <span class="nav-label">Vender</span>
+      </button>
+      <button class="nav-item" data-target="inventory">
+        <span class="material-icons nav-icon">inventory_2</span>
+        <span class="nav-label">Inventario</span>
+      </button>
+      <button class="nav-item" data-target="history">
+        <span class="material-icons nav-icon">history</span>
+        <span class="nav-label">Historial</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- CART DRAWER / SIDE SHEET -->
+  <div id="cart-backdrop" class="cart-backdrop"></div>
+  <div id="cart-drawer" class="cart-drawer hidden">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <span class="material-icons">shopping_cart</span>
+        <h3>Carrito de Compra</h3>
+      </div>
+      <button id="close-cart-btn" class="btn-icon">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+    
+    <div class="drawer-content">
+      <div id="cart-items-container" class="cart-items-container">
+        <!-- Cart items populated dynamically -->
+        <div class="empty-cart-state">
+          <span class="material-icons">add_shopping_cart</span>
+          <p>El carrito está vacío. Agrega productos de la lista.</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="drawer-footer">
+      <div class="summary-row">
+        <span>Subtotal</span>
+        <span id="cart-subtotal">$0.00</span>
+      </div>
+      <div class="summary-row total-row">
+        <span>Total</span>
+        <span id="cart-total">$0.00</span>
+      </div>
+      
+      <button id="checkout-btn" class="btn btn-primary btn-block btn-lg" disabled>
+        <span>Confirmar Venta</span>
+        <span class="material-icons font-icon">arrow_forward</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- CHECKOUT MODAL -->
+  <div id="checkout-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Procesar Pago</h3>
+        <button id="close-checkout-btn" class="btn-icon"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="checkout-amount-display">
+          <span>Monto a Cobrar</span>
+          <h2 id="checkout-total-display">$0.00</h2>
+        </div>
+        
+        <div class="form-group">
+          <label>Método de Pago</label>
+          <div class="payment-methods-grid">
+            <button class="pay-method-card active" data-method="Efectivo">
+              <span class="material-icons">payments</span>
+              <span>Efectivo</span>
+            </button>
+            <button class="pay-method-card" data-method="Tarjeta">
+              <span class="material-icons">credit_card</span>
+              <span>Tarjeta</span>
+            </button>
+            <button class="pay-method-card" data-method="Transferencia">
+              <span class="material-icons">account_balance</span>
+              <span>Transf.</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="cash-payment-fields" class="cash-fields">
+          <div class="form-group">
+            <label for="cash-received">Efectivo Recibido</label>
+            <div class="input-wrapper">
+              <span class="input-prefix">$</span>
+              <input type="number" id="cash-received" step="any" placeholder="0.00" inputmode="decimal">
+            </div>
+          </div>
+          
+          <div class="quick-cash-container">
+            <button class="quick-cash-btn" data-amount="50">+$50</button>
+            <button class="quick-cash-btn" data-amount="100">+$100</button>
+            <button class="quick-cash-btn" data-amount="200">+$200</button>
+            <button class="quick-cash-btn" data-amount="500">+$500</button>
+            <button class="quick-cash-btn" id="quick-cash-exact">Exacto</button>
+          </div>
+
+          <div class="change-display">
+            <span>Cambio a Entregar</span>
+            <h3 id="checkout-change-display" class="neutral-change">$0.00</h3>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-checkout-btn" class="btn btn-secondary">Cancelar</button>
+        <button id="complete-sale-btn" class="btn btn-primary">
+          <span class="material-icons">check_circle</span>
+          <span>Registrar Venta</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCT EDIT/ADD MODAL -->
+  <div id="product-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="product-modal-title">Agregar Producto</h3>
+        <button id="close-product-btn" class="btn-icon"><span class="material-icons">close</span></button>
+      </div>
+      <form id="product-form">
+        <input type="hidden" id="product-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="prod-name">Nombre del Producto*</label>
+            <input type="text" id="prod-name" required placeholder="Ej. Pastel de Chocolate">
+          </div>
+          
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="prod-price">Precio de Venta ($)*</label>
+              <input type="number" id="prod-price" required step="any" min="0" placeholder="0.00" inputmode="decimal">
+            </div>
+            <div class="form-group">
+              <label for="prod-cost">Costo de Producción/Compra ($)</label>
+              <input type="number" id="prod-cost" step="any" min="0" placeholder="0.00" inputmode="decimal">
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="prod-stock">Stock Inicial / Actual*</label>
+              <input type="number" id="prod-stock" required min="0" placeholder="0" inputmode="numeric">
+            </div>
+            <div class="form-group">
+              <label for="prod-category">Categoría*</label>
+              <input type="text" id="prod-category" required placeholder="Ej. Pasteles, Bebidas">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="prod-barcode">Código de Barras (Opcional)</label>
+            <div class="input-wrapper">
+              <span class="material-icons input-icon">qr_code_scanner</span>
+              <input type="text" id="prod-barcode" placeholder="Escanear o ingresar código">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="cancel-product-btn" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" id="save-product-btn" class="btn btn-primary">
+            <span class="material-icons">save</span>
+            <span>Guardar</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- USER EDIT/ADD MODAL -->
+  <div id="user-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Crear Nuevo Usuario</h3>
+        <button id="close-user-btn" class="btn-icon"><span class="material-icons">close</span></button>
+      </div>
+      <form id="user-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="user-username">Nombre de Usuario*</label>
+            <div class="input-wrapper">
+              <span class="material-icons input-icon">person</span>
+              <input type="text" id="user-username" required placeholder="Ej: cajero1" autocomplete="off">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="user-password">Contraseña*</label>
+            <div class="input-wrapper">
+              <span class="material-icons input-icon">lock</span>
+              <input type="password" id="user-password" required placeholder="Mínimo 4 caracteres" minlength="4" autocomplete="new-password">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="cancel-user-btn" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" id="save-user-btn" class="btn btn-primary">
+            <span class="material-icons">person_add</span>
+            <span>Crear Usuario</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SERVICE WORKER REGISTRATION -->
+  <script src="register-sw.js"></script>
+  
+  <!-- APP LOGIC (Firebase client modules) -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

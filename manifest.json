@@ -1,0 +1,18 @@
+{
+  "name": "PosRápido - Punto de Venta",
+  "short_name": "PosRápido",
+  "description": "Punto de Venta e Inventario Rápido para Dispositivos Móviles",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#0b0f19",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
