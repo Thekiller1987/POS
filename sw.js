@@ -1,4 +1,4 @@
-const CACHE_NAME = 'posrapido-v1';
+const CACHE_NAME = 'el-mamalon-v1';
 const ASSETS = [
   './',
   './index.html',

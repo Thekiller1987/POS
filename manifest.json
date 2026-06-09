@@ -1,7 +1,7 @@
 {
-  "name": "PosRápido - Punto de Venta",
-  "short_name": "PosRápido",
-  "description": "Punto de Venta e Inventario Rápido para Dispositivos Móviles",
+  "name": "Sistema El Mamalon - Punto de Venta",
+  "short_name": "El Mamalon",
+  "description": "Punto de Venta e Inventario Rápido - Sistema El Mamalon",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0b0f19",

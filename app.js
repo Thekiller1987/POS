@@ -246,7 +246,7 @@ window.addEventListener('offline', updateConnectionStatus);
 // Map standard username to Firebase email format, and pad password
 function formatAuthCredentials(username, password) {
   const cleanUsername = username.trim().toLowerCase();
-  const email = `${cleanUsername}@posrapido.com`;
+  const email = `${cleanUsername}@elmamalon.com`;
   // Firebase Auth password requirements: min 6 chars. 
   // We prefix to satisfy length of 4+ digits/chars.
   const paddedPassword = `pos_${password.trim()}`;
