@@ -11,6 +11,7 @@ import {
   initializeFirestore, 
   persistentLocalCache, 
   persistentMultipleTabManager,
+  getFirestore,
   collection, 
   doc, 
   getDocs, 
@@ -51,12 +52,18 @@ try {
   console.error("Secondary app init warning:", err);
 }
 
-// Initialize Firestore with Offline Caching Enabled
-const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
+// Initialize Firestore with Offline Caching Enabled and Safe Fallback
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+} catch (cacheErr) {
+  console.warn("No se pudo iniciar Firestore con caché local persistente, usando configuración base:", cacheErr);
+  db = getFirestore(app);
+}
 
 // Initialize Auth
 const auth = getAuth(app);
@@ -74,6 +81,7 @@ let searchQueryParams = { pos: '', inventory: '' };
 let activeTab = 'pos';
 let currentSalePaymentMethod = 'Efectivo';
 let authUser = null;
+let authUserRole = 'usuario';
 
 // Realtime listeners storage for clean unsubscription
 let productsUnsubscribe = null;
@@ -399,20 +407,30 @@ onAuthStateChanged(auth, async (user) => {
     updateCartUI();
     
     // Self-healing database check: ensure this user exists in Firestore 'users' collection
+    let userRole = 'usuario';
     try {
       const username = user.email.split('@')[0];
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
       if (!userDoc.exists()) {
+        userRole = username === 'admin' ? 'admin' : 'usuario';
         await setDoc(userRef, {
           username: username,
-          role: username === 'admin' ? 'admin' : 'usuario',
+          role: userRole,
           createdAt: Timestamp.now()
         });
+      } else {
+        userRole = userDoc.data().role || 'usuario';
       }
     } catch (dbErr) {
-      console.warn("No se pudo guardar el perfil del usuario en Firestore:", dbErr.message);
+      console.warn("No se pudo guardar/leer el perfil del usuario en Firestore:", dbErr.message);
+      // Fallback based on email
+      const username = user.email.split('@')[0];
+      userRole = username === 'admin' ? 'admin' : 'usuario';
     }
+
+    authUserRole = userRole;
+    applyRoleBasedUI(userRole);
 
     // Start Realtime Data Listeners
     startRealtimeListeners();
@@ -432,9 +450,51 @@ onAuthStateChanged(auth, async (user) => {
     // Stop Realtime Data Listeners
     stopRealtimeListeners();
     
+    authUserRole = 'usuario';
+    applyRoleBasedUI('usuario');
+    
     showLoading(false);
   }
 });
+
+// Dynamic UI adjustments based on user role
+function applyRoleBasedUI(role) {
+  const isAdmin = role === 'admin';
+  
+  // 1. Show/Hide Nuevo Producto button
+  if (elements.addProductBtn) {
+    if (isAdmin) {
+      elements.addProductBtn.classList.remove('hidden');
+    } else {
+      elements.addProductBtn.classList.add('hidden');
+    }
+  }
+
+  // 2. Show/Hide subtabs in Inventory (Categories and Users)
+  const subviewButtons = document.querySelectorAll('.inventory-container .view-toggle .toggle-btn');
+  subviewButtons.forEach(btn => {
+    const subview = btn.dataset.subview;
+    if (subview === 'users' || subview === 'categories') {
+      if (isAdmin) {
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+  });
+
+  // If the active subview was users or categories, and we are not admin, switch back to products subview
+  const activeSubbtn = document.querySelector('.inventory-container .view-toggle .toggle-btn.active');
+  if (!isAdmin && activeSubbtn && (activeSubbtn.dataset.subview === 'users' || activeSubbtn.dataset.subview === 'categories')) {
+    const productsBtn = document.querySelector('.inventory-container .view-toggle .toggle-btn[data-subview="products"]');
+    if (productsBtn) {
+      productsBtn.click();
+    }
+  }
+
+  // Re-render inventory list to apply edit/delete button hiding
+  renderInventory();
+}
 
 // Handle login form submission
 elements.authForm.addEventListener('submit', async (e) => {
@@ -541,9 +601,12 @@ function startRealtimeListeners() {
     renderProductSalesReport();
   }, (error) => {
     console.error("Sales sync error:", error);
+    showLoading(false);
     if (error.code === 'failed-precondition') {
       console.warn("Index needed, falling back to client-side sales filtering.");
       loadAllSalesFallback();
+    } else {
+      showToast('Error de permisos al sincronizar ventas.', 'error');
     }
   });
 
@@ -557,6 +620,7 @@ function startRealtimeListeners() {
     renderUsers();
   }, (error) => {
     console.error("Users list sync error:", error);
+    showLoading(false);
   });
 
   // 4. Categories Listener
@@ -571,6 +635,7 @@ function startRealtimeListeners() {
     renderCategoryChips();
   }, (error) => {
     console.error("Categories sync error:", error);
+    showLoading(false);
   });
 }
 
@@ -898,13 +963,21 @@ elements.cartBackdrop.addEventListener('click', closeCartDrawer);
 
 function openCartDrawer() {
   if (cart.length === 0) return;
-  elements.cartBackdrop.classList.add('active');
-  elements.cartDrawer.classList.add('open');
+  elements.cartDrawer.classList.remove('hidden');
+  setTimeout(() => {
+    elements.cartBackdrop.classList.add('active');
+    elements.cartDrawer.classList.add('open');
+  }, 10);
 }
 
 function closeCartDrawer() {
   elements.cartBackdrop.classList.remove('active');
   elements.cartDrawer.classList.remove('open');
+  setTimeout(() => {
+    if (!elements.cartDrawer.classList.contains('open')) {
+      elements.cartDrawer.classList.add('hidden');
+    }
+  }, 300);
 }
 
 // ==========================================
@@ -1154,12 +1227,14 @@ function renderInventory() {
         
         <div class="inventory-card-actions">
           <span class="${stockClass}">${p.stock} pz</span>
+          ${authUserRole === 'admin' ? `
           <button class="btn-icon" onclick="window.openEditProductModal('${p.id}')">
             <span class="material-icons" style="color:var(--primary-light)">edit</span>
           </button>
           <button class="btn-icon" onclick="window.deleteProduct('${p.id}', '${escapeHtml(p.name)}')">
             <span class="material-icons" style="color:var(--danger)">delete</span>
           </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -1609,6 +1684,7 @@ function renderCategories() {
           <span class="user-card-name">${escapeHtml(c.name)}</span>
         </div>
       </div>
+      ${authUserRole === 'admin' ? `
       <div style="display: flex; gap: 8px;">
         <button class="btn-icon" onclick="window.openEditCategoryModal('${c.id}')">
           <span class="material-icons" style="color:var(--primary-light)">edit</span>
@@ -1617,6 +1693,7 @@ function renderCategories() {
           <span class="material-icons" style="color:var(--danger)">delete</span>
         </button>
       </div>
+      ` : ''}
     </div>
   `).join('');
 }
