@@ -310,11 +310,12 @@ select:focus {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .loading-overlay.fade-out {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 
@@ -786,15 +787,17 @@ select:focus {
   box-shadow: var(--shadow-lg), 0 0 15px var(--primary-glow);
   cursor: pointer;
   z-index: 80;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: opacity 0.25s, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), visibility 0.25s;
   transform: translateY(100px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 
 .cart-trigger.visible {
   transform: translateY(0);
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
