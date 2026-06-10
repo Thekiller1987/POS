@@ -894,7 +894,13 @@ function startRealtimeListeners() {
     updateProductCategoryDropdown();
     renderCategoryChips();
   }, (error) => {
-    console.error("Categories sync error:", error);
+    if (error.code === 'permission-denied') {
+      console.warn("La colección 'categories' no tiene permisos de lectura configurados en Firebase Console. Se activó el fallback local (compilación dinámica a partir de productos).");
+      updateProductCategoryDropdown();
+      renderCategoryChips();
+    } else {
+      console.error("Categories sync error:", error);
+    }
     showLoading(false);
   });
 }
@@ -1922,18 +1928,27 @@ function updateProductCategoryDropdown() {
 
   const currentVal = selectEl.value;
   
-  // Clear options
-  selectEl.innerHTML = categories.map(cat => `
-    <option value="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</option>
+  // Compile unique categories from products as fallback
+  const productCats = [...new Set(products.map(p => p.category.trim()).filter(c => c !== ''))];
+  const definedCats = categories.map(cat => cat.name.trim());
+  const allUniqueCats = [...new Set([...definedCats, ...productCats])];
+  
+  // Clear and update options
+  selectEl.innerHTML = allUniqueCats.map(catName => `
+    <option value="${escapeHtml(catName)}">${escapeHtml(catName)}</option>
   `).join('');
 
-  // Add default placeholder if no categories
-  if (categories.length === 0) {
-    selectEl.innerHTML = '<option value="">Crear categorías en la pestaña Categorías</option>';
+  // If still no categories, show default generic categories so they can save products immediately
+  if (allUniqueCats.length === 0) {
+    selectEl.innerHTML = `
+      <option value="General">General</option>
+      <option value="Pasteles">Pasteles</option>
+      <option value="Bebidas">Bebidas</option>
+    `;
   }
 
   // Restore value if existed, otherwise select first option
-  if (currentVal && categories.some(cat => cat.name === currentVal)) {
+  if (currentVal && allUniqueCats.includes(currentVal)) {
     selectEl.value = currentVal;
   }
 }
