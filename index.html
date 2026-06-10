@@ -139,8 +139,8 @@
         </div>
       </section>
 
-      <!-- VIEW: INVENTARIO -->
-      <section id="inventory-view" class="view-content hidden">
+      <!-- VIEW: PRODUCTOS -->
+      <section id="products-view" class="view-content hidden">
         <div class="inventory-container">
           <div class="inventory-header">
             <h3>Gestión de Inventario</h3>
@@ -149,51 +149,44 @@
               <span>Nuevo Producto</span>
             </button>
           </div>
-
-          <!-- Segmented subtab switcher -->
-          <div class="view-toggle">
-            <button class="toggle-btn active" data-subview="products">Productos</button>
-            <button class="toggle-btn" data-subview="categories">Categorías</button>
-            <button class="toggle-btn" data-subview="users">Usuarios</button>
+          <div class="search-bar">
+            <span class="material-icons">search</span>
+            <input type="text" id="inventory-search" placeholder="Buscar por nombre o categoría...">
           </div>
-
-          <!-- Subview: Products Inventory -->
-          <div id="products-subview" class="subview-content">
-            <div class="search-bar">
-              <span class="material-icons">search</span>
-              <input type="text" id="inventory-search" placeholder="Buscar por nombre o categoría...">
-            </div>
-            <div id="inventory-list" class="inventory-list">
-              <!-- Dynamic items go here -->
-            </div>
+          <div id="inventory-list" class="inventory-list">
+            <!-- Dynamic items go here -->
           </div>
+        </div>
+      </section>
 
-          <!-- Subview: Categories List -->
-          <div id="categories-subview" class="subview-content hidden">
-            <div class="users-list-header">
-              <h4>Categorías / Clases</h4>
-              <button id="add-category-btn" class="btn btn-primary btn-sm">
-                <span class="material-icons">category</span>
-                <span>Nueva Categoría</span>
-              </button>
-            </div>
-            <div id="categories-list" class="users-list">
-              <!-- Dynamic categories list go here -->
-            </div>
+      <!-- VIEW: CATEGORIAS -->
+      <section id="categories-view" class="view-content hidden">
+        <div class="inventory-container">
+          <div class="inventory-header">
+            <h3>Categorías de Productos</h3>
+            <button id="add-category-btn" class="btn btn-primary">
+              <span class="material-icons">category</span>
+              <span>Nueva Categoría</span>
+            </button>
           </div>
+          <div id="categories-list" class="users-list">
+            <!-- Dynamic categories list go here -->
+          </div>
+        </div>
+      </section>
 
-          <!-- Subview: Users List -->
-          <div id="users-subview" class="subview-content hidden">
-            <div class="users-list-header">
-              <h4>Usuarios en el Sistema</h4>
-              <button id="add-user-btn" class="btn btn-primary btn-sm">
-                <span class="material-icons">person_add</span>
-                <span>Nuevo Usuario</span>
-              </button>
-            </div>
-            <div id="users-list" class="users-list">
-              <!-- Dynamic users list go here -->
-            </div>
+      <!-- VIEW: USUARIOS -->
+      <section id="users-view" class="view-content hidden">
+        <div class="inventory-container">
+          <div class="inventory-header">
+            <h3>Usuarios en el Sistema</h3>
+            <button id="add-user-btn" class="btn btn-primary">
+              <span class="material-icons">person_add</span>
+              <span>Nuevo Usuario</span>
+            </button>
+          </div>
+          <div id="users-list" class="users-list">
+            <!-- Dynamic users list go here -->
           </div>
         </div>
       </section>
@@ -275,9 +268,17 @@
         <span class="material-icons nav-icon">shopping_bag</span>
         <span class="nav-label">Vender</span>
       </button>
-      <button class="nav-item" data-target="inventory">
+      <button class="nav-item" data-target="products">
         <span class="material-icons nav-icon">inventory_2</span>
-        <span class="nav-label">Inventario</span>
+        <span class="nav-label">Productos</span>
+      </button>
+      <button class="nav-item" data-target="categories">
+        <span class="material-icons nav-icon">category</span>
+        <span class="nav-label">Categorías</span>
+      </button>
+      <button class="nav-item" data-target="users">
+        <span class="material-icons nav-icon">people</span>
+        <span class="nav-label">Usuarios</span>
       </button>
       <button class="nav-item" data-target="history">
         <span class="material-icons nav-icon">history</span>
@@ -288,6 +289,7 @@
 
   <!-- CART DRAWER / SIDE SHEET (NATIVE DIALOG) -->
   <dialog id="cart-drawer" class="cart-drawer">
+    <div class="drawer-swipe-handle"></div>
     <div class="drawer-header">
       <div class="drawer-title">
         <span class="material-icons">shopping_cart</span>
@@ -495,10 +497,11 @@
   <dialog id="user-modal" class="modern-dialog">
     <div class="modal">
       <div class="modal-header">
-        <h3>Crear Nuevo Usuario</h3>
+        <h3 id="user-modal-title">Crear Nuevo Usuario</h3>
         <button id="close-user-btn" class="btn-icon"><span class="material-icons">close</span></button>
       </div>
       <form id="user-form">
+        <input type="hidden" id="user-id">
         <div class="modal-body">
           <div class="form-group">
             <label for="user-username">Nombre de Usuario*</label>
@@ -508,10 +511,10 @@
             </div>
           </div>
           <div class="form-group">
-            <label for="user-password">Contraseña*</label>
+            <label for="user-password" id="user-password-label">Contraseña*</label>
             <div class="input-wrapper">
               <span class="material-icons input-icon">lock</span>
-              <input type="password" id="user-password" required placeholder="Mínimo 4 caracteres" minlength="4" autocomplete="new-password">
+              <input type="password" id="user-password" placeholder="Mínimo 4 caracteres" minlength="4" autocomplete="new-password">
             </div>
           </div>
           <div class="form-group">
@@ -529,7 +532,7 @@
           <button type="button" id="cancel-user-btn" class="btn btn-secondary">Cancelar</button>
           <button type="submit" id="save-user-btn" class="btn btn-primary">
             <span class="material-icons">person_add</span>
-            <span>Crear Usuario</span>
+            <span id="save-user-btn-text">Crear Usuario</span>
           </button>
         </div>
       </form>

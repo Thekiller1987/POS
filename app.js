@@ -190,7 +190,9 @@ const elements = {
   authView: document.getElementById('auth-view'),
   appShell: document.getElementById('app-shell'),
   posView: document.getElementById('pos-view'),
-  inventoryView: document.getElementById('inventory-view'),
+  productsView: document.getElementById('products-view'),
+  categoriesView: document.getElementById('categories-view'),
+  usersView: document.getElementById('users-view'),
   historyView: document.getElementById('history-view'),
   
   // Auth Form
@@ -278,13 +280,17 @@ const elements = {
   
   // User Modal
   userModal: document.getElementById('user-modal'),
+  userModalTitle: document.getElementById('user-modal-title'),
+  userId: document.getElementById('user-id'),
   closeUserBtn: document.getElementById('close-user-btn'),
   cancelUserBtn: document.getElementById('cancel-user-btn'),
   userForm: document.getElementById('user-form'),
   userUsername: document.getElementById('user-username'),
   userPassword: document.getElementById('user-password'),
+  userPasswordLabel: document.getElementById('user-password-label'),
   userRole: document.getElementById('user-role'),
   saveUserBtn: document.getElementById('save-user-btn'),
+  saveUserBtnText: document.getElementById('save-user-btn-text'),
 
   // New Categories subview & Modal elements
   categoriesSubview: document.getElementById('categories-subview'),
@@ -543,7 +549,7 @@ onAuthStateChanged(auth, async (user) => {
     
     // Restore saved routing tab or fallback to POS
     const savedTab = location.hash.replace('#/', '');
-    switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
+    switchTab(['products', 'categories', 'users', 'history', 'pos'].includes(savedTab) ? savedTab : 'pos');
     
     showLoading(false);
     showToast(`Bienvenido de vuelta`, 'success');
@@ -570,7 +576,7 @@ onAuthStateChanged(auth, async (user) => {
       startRealtimeListeners();
       
       const savedTab = location.hash.replace('#/', '');
-      switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
+      switchTab(['products', 'categories', 'users', 'history', 'pos'].includes(savedTab) ? savedTab : 'pos');
       
       showLoading(false);
       attemptBackgroundOnlineReauth();
@@ -603,30 +609,40 @@ function applyRoleBasedUI(role) {
     }
   }
 
-  // 2. Show/Hide subtabs in Inventory (Categories and Users)
-  const subviewButtons = document.querySelectorAll('.inventory-container .view-toggle .toggle-btn');
-  subviewButtons.forEach(btn => {
-    const subview = btn.dataset.subview;
-    if (subview === 'users' || subview === 'categories') {
+  // 2. Show/Hide top-level bottom nav items based on role
+  elements.navItems.forEach(item => {
+    const target = item.dataset.target;
+    if (target === 'categories' || target === 'users') {
       if (isAdmin) {
-        btn.classList.remove('hidden');
+        item.classList.remove('hidden');
       } else {
-        btn.classList.add('hidden');
+        item.classList.add('hidden');
       }
     }
   });
 
-  // If the active subview was users or categories, and we are not admin, switch back to products subview
-  const activeSubbtn = document.querySelector('.inventory-container .view-toggle .toggle-btn.active');
-  if (!isAdmin && activeSubbtn && (activeSubbtn.dataset.subview === 'users' || activeSubbtn.dataset.subview === 'categories')) {
-    const productsBtn = document.querySelector('.inventory-container .view-toggle .toggle-btn[data-subview="products"]');
-    if (productsBtn) {
-      productsBtn.click();
-    }
+  // If the active tab is categories or users, and we are not admin, switch back to pos
+  if (!isAdmin && (activeTab === 'categories' || activeTab === 'users')) {
+    switchTab('pos');
   }
 
   // Re-render inventory list to apply edit/delete button hiding
   renderInventory();
+}
+
+// Force logout utility (e.g. when user profile is deleted)
+async function forceLogout() {
+  localStorage.removeItem('jwt_token');
+  try {
+    await signOut(auth);
+  } catch (e) {}
+  authUser = null;
+  authUserRole = 'usuario';
+  elements.appShell.classList.add('hidden');
+  elements.authView.classList.remove('hidden');
+  stopRealtimeListeners();
+  applyRoleBasedUI('usuario');
+  showLoading(false);
 }
 
 // Handle login form submission
@@ -679,7 +695,7 @@ elements.authForm.addEventListener('submit', async (e) => {
       startRealtimeListeners();
       
       const savedTab = location.hash.replace('#/', '');
-      switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
+      switchTab(['products', 'categories', 'users', 'history', 'pos'].includes(savedTab) ? savedTab : 'pos');
       
       showLoading(false);
       showToast('Inicio de sesión Offline exitoso (JWT local)', 'success');
@@ -878,9 +894,27 @@ function startRealtimeListeners() {
   const usersQuery = query(collection(db, 'users'), orderBy('username', 'asc'));
   usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
     users = [];
+    let currentUserExists = false;
     snapshot.forEach((doc) => {
-      users.push({ id: doc.id, ...doc.data() });
+      const u = { id: doc.id, ...doc.data() };
+      users.push(u);
+      if (authUser && doc.id === authUser.uid) {
+        currentUserExists = true;
+      }
     });
+
+    // Check if the current user was deleted from the system
+    if (authUser) {
+      const username = authUser.email ? authUser.email.split('@')[0] : '';
+      // If we are logged in, are NOT the main admin, and the document is missing
+      if (username !== 'admin' && !currentUserExists && snapshot.size > 0) {
+        console.warn("El usuario actual fue eliminado por el administrador. Cerrando sesión...");
+        showToast('Tu cuenta ha sido eliminada o desactivada.', 'error');
+        forceLogout();
+        return;
+      }
+    }
+
     renderUsers();
   }, (error) => {
     console.error("Users list sync error:", error);
@@ -971,12 +1005,20 @@ function syncCartWithStock() {
 // Navigation & Router
 // ==========================================
 function switchTab(tabId) {
+  // Authorization check
+  const isAdmin = authUserRole === 'admin';
+  if (!isAdmin && (tabId === 'categories' || tabId === 'users')) {
+    tabId = 'pos';
+  }
+
   activeTab = tabId;
   location.hash = `#/${tabId}`;
 
   // Hide all sections
   elements.posView.classList.add('hidden');
-  elements.inventoryView.classList.add('hidden');
+  if (elements.productsView) elements.productsView.classList.add('hidden');
+  if (elements.categoriesView) elements.categoriesView.classList.add('hidden');
+  if (elements.usersView) elements.usersView.classList.add('hidden');
   elements.historyView.classList.add('hidden');
   
   // Show active section
@@ -1170,15 +1212,18 @@ function updateCartUI() {
     elements.checkoutBtn.disabled = true;
   } else {
     elements.cartItemsContainer.innerHTML = cart.map(item => `
-      <div class="cart-item">
-        <div class="cart-item-details">
+      <div class="cart-item-card">
+        <div class="cart-item-card-header">
           <span class="cart-item-name">${escapeHtml(item.name)}</span>
-          <div class="cart-item-prices">
+          <button class="btn-icon remove-item-btn" onclick="window.removeCartItem('${item.id}')" title="Eliminar">
+            <span class="material-icons">delete_outline</span>
+          </button>
+        </div>
+        <div class="cart-item-card-footer">
+          <div class="cart-item-price-block">
             <span class="cart-item-unit-price">${item.quantity} x $${item.price.toFixed(2)}</span>
             <span class="cart-item-total-price">$${(item.price * item.quantity).toFixed(2)}</span>
           </div>
-        </div>
-        <div class="cart-item-actions">
           <div class="qty-control">
             <button class="qty-btn" onclick="window.updateCartQty('${item.id}', -1)">
               <span class="material-icons">remove</span>
@@ -1188,9 +1233,6 @@ function updateCartUI() {
               <span class="material-icons">add</span>
             </button>
           </div>
-          <button class="btn-icon remove-item-btn" onclick="window.removeCartItem('${item.id}')">
-            <span class="material-icons">delete</span>
-          </button>
         </div>
       </div>
     `).join('');
@@ -1807,17 +1849,65 @@ document.querySelectorAll('[data-subview]').forEach(btn => {
 // ==========================================
 // User Management Controller
 // ==========================================
-elements.addUserBtn.addEventListener('click', () => {
-  elements.userForm.reset();
-  if (elements.userModal) elements.userModal.showModal();
-});
+if (elements.addUserBtn) {
+  elements.addUserBtn.addEventListener('click', () => {
+    if (elements.userForm) elements.userForm.reset();
+    if (elements.userId) elements.userId.value = '';
+    
+    if (elements.userUsername) {
+      elements.userUsername.disabled = false;
+    }
+    
+    // Show password field
+    if (elements.userPassword) {
+      const passGroup = elements.userPassword.closest('.form-group');
+      if (passGroup) passGroup.classList.remove('hidden');
+      elements.userPassword.required = true;
+    }
+    
+    if (elements.userModalTitle) elements.userModalTitle.textContent = 'Crear Nuevo Usuario';
+    if (elements.saveUserBtnText) elements.saveUserBtnText.textContent = 'Crear Usuario';
+    if (elements.userModal) elements.userModal.showModal();
+  });
+}
 
-elements.closeUserBtn.addEventListener('click', closeUserModal);
-elements.cancelUserBtn.addEventListener('click', closeUserModal);
+if (elements.closeUserBtn) elements.closeUserBtn.addEventListener('click', closeUserModal);
+if (elements.cancelUserBtn) elements.cancelUserBtn.addEventListener('click', closeUserModal);
 
 function closeUserModal() {
   if (elements.userModal) elements.userModal.close();
 }
+
+// Open Edit User Modal
+window.openEditUserModal = (uid) => {
+  const u = users.find(user => user.id === uid);
+  if (!u) return;
+
+  if (u.username === 'admin') {
+    showToast('El administrador principal no puede ser editado.', 'warning');
+    return;
+  }
+
+  if (elements.userId) elements.userId.value = u.id;
+  if (elements.userUsername) {
+    elements.userUsername.value = u.username;
+    elements.userUsername.disabled = true;
+  }
+  
+  // Hide password field since client SDK cannot change other users' passwords
+  if (elements.userPassword) {
+    const passGroup = elements.userPassword.closest('.form-group');
+    if (passGroup) passGroup.classList.add('hidden');
+    elements.userPassword.required = false;
+    elements.userPassword.value = '';
+  }
+
+  if (elements.userRole) elements.userRole.value = u.role || 'usuario';
+
+  if (elements.userModalTitle) elements.userModalTitle.textContent = 'Editar Usuario';
+  if (elements.saveUserBtnText) elements.saveUserBtnText.textContent = 'Guardar Cambios';
+  if (elements.userModal) elements.userModal.showModal();
+};
 
 // Render Users List
 function renderUsers() {
@@ -1842,68 +1932,118 @@ function renderUsers() {
           <span class="user-card-role">${u.role === 'admin' ? 'Administrador' : 'Cajero / Operador'}</span>
         </div>
       </div>
-      <span class="user-card-role">${u.role || 'usuario'}</span>
+      ${authUserRole === 'admin' && u.username !== 'admin' ? `
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-icon" onclick="window.openEditUserModal('${u.id}')" title="Editar">
+          <span class="material-icons" style="color:var(--primary-light)">edit</span>
+        </button>
+        <button class="btn-icon" onclick="window.deleteUser('${u.id}', '${escapeHtml(u.username)}')" title="Eliminar">
+          <span class="material-icons" style="color:var(--danger)">delete</span>
+        </button>
+      </div>
+      ` : ''}
     </div>
   `).join('');
 }
 
-// Handle User Creation
+// Handle User Creation / Edit
 elements.userForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const userId = elements.userId ? elements.userId.value : '';
   const username = elements.userUsername.value.trim().toLowerCase();
   const password = elements.userPassword.value;
   const role = elements.userRole.value;
 
-  if (password.length < 4) {
-    showToast('La contraseña debe tener mínimo 4 caracteres.', 'warning');
-    return;
-  }
-
   // Double check admin privileges
   if (authUser && authUser.email.split('@')[0] !== 'admin') {
-    showToast('Solo el administrador principal puede crear usuarios.', 'error');
+    showToast('Solo el administrador principal puede gestionar usuarios.', 'error');
     return;
   }
 
-  showLoading(true, 'Creando credenciales en Firebase...');
-  const { email, password: securePassword } = formatAuthCredentials(username, password);
+  if (userId) {
+    // EDIT MODE
+    showLoading(true, 'Actualizando usuario...');
+    try {
+      await setDoc(doc(db, 'users', userId), {
+        role: role
+      }, { merge: true });
 
-  try {
-    if (!secondaryAuth) {
-      throw new Error("El sistema secundario de credenciales de Firebase no está inicializado.");
+      showToast(`Usuario "${username}" actualizado exitosamente.`, 'success');
+      closeUserModal();
+      elements.userForm.reset();
+    } catch (err) {
+      console.error("Edit User Error:", err);
+      showToast('Error al actualizar el usuario.', 'error');
+    } finally {
+      showLoading(false);
     }
-    
-    // Register the user credentials using the secondary app instance
-    // This creates the user in Firebase Auth without overriding the administrator's logged-in session!
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, securePassword);
-    const newUser = userCredential.user;
-    await secondaryAuth.signOut(); // Clean secondary state immediately
-
-    // Save in Firestore collection to let us list it in the panel
-    await setDoc(doc(db, 'users', newUser.uid), {
-      username: username,
-      role: role,
-      createdAt: Timestamp.now()
-    });
-
-    showToast(`Usuario "${username}" creado exitosamente.`, 'success');
-    closeUserModal();
-    elements.userForm.reset();
-  } catch (err) {
-    console.error("Create User Error:", err);
-    let msg = 'Error al registrar el usuario.';
-    if (err.code === 'auth/email-already-in-use') {
-      msg = 'El nombre de usuario ya está en uso.';
-    } else if (err.code === 'auth/invalid-email') {
-      msg = 'El nombre de usuario contiene caracteres inválidos.';
-    } else if (err.code === 'auth/weak-password') {
-      msg = 'La contraseña es muy débil.';
+  } else {
+    // CREATE MODE
+    if (password.length < 4) {
+      showToast('La contraseña debe tener mínimo 4 caracteres.', 'warning');
+      return;
     }
-    showToast(msg, 'error');
-  } finally {
-    showLoading(false);
+
+    showLoading(true, 'Creando credenciales en Firebase...');
+    const { email, password: securePassword } = formatAuthCredentials(username, password);
+
+    try {
+      if (!secondaryAuth) {
+        throw new Error("El sistema secundario de credenciales de Firebase no está inicializado.");
+      }
+      
+      // Register the user credentials using the secondary app instance
+      // This creates the user in Firebase Auth without overriding the administrator's logged-in session!
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, securePassword);
+      const newUser = userCredential.user;
+      await secondaryAuth.signOut(); // Clean secondary state immediately
+
+      // Save in Firestore collection to let us list it in the panel
+      await setDoc(doc(db, 'users', newUser.uid), {
+        username: username,
+        role: role,
+        createdAt: Timestamp.now()
+      });
+
+      showToast(`Usuario "${username}" creado exitosamente.`, 'success');
+      closeUserModal();
+      elements.userForm.reset();
+    } catch (err) {
+      console.error("Create User Error:", err);
+      let msg = 'Error al registrar el usuario.';
+      if (err.code === 'auth/email-already-in-use') {
+        msg = 'El nombre de usuario ya está en uso.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'El nombre de usuario contiene caracteres inválidos.';
+      } else if (err.code === 'auth/weak-password') {
+        msg = 'La contraseña es muy débil.';
+      }
+      showToast(msg, 'error');
+    } finally {
+      showLoading(false);
+    }
   }
 });
+
+// Delete User
+window.deleteUser = async (uid, username) => {
+  if (username === 'admin') {
+    showToast('No se puede eliminar al administrador principal.', 'error');
+    return;
+  }
+  if (confirm(`¿Seguro que deseas eliminar al usuario "${username}"?`)) {
+    showLoading(true, 'Eliminando usuario...');
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+      showToast('Usuario eliminado del sistema.', 'success');
+    } catch (err) {
+      console.error("Delete user failed:", err);
+      showToast('Error al eliminar usuario.', 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+};
 
 // Auto-migrate unique product categories to the 'categories' collection if empty
 async function migrateCategoriesIfNeeded(productsList) {
