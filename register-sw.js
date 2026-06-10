@@ -8,4 +8,14 @@ if ('serviceWorker' in navigator) {
         console.error('[Service Worker] Error al registrar:', err);
       });
   });
+
+  // Recargar la página automáticamente cuando se activa un nuevo Service Worker
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
 }
+

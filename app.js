@@ -1570,19 +1570,21 @@ function updateProductCategoryDropdown() {
 // ==========================================
 // Category Management Controller
 // ==========================================
-elements.addCategoryBtn.addEventListener('click', () => {
-  elements.categoryForm.reset();
-  elements.categoryId.value = '';
-  elements.categoryModalTitle = document.getElementById('category-modal-title');
-  if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Nueva Categoría';
-  elements.categoryModal.classList.add('active');
-});
+if (elements.addCategoryBtn) {
+  elements.addCategoryBtn.addEventListener('click', () => {
+    if (elements.categoryForm) elements.categoryForm.reset();
+    if (elements.categoryId) elements.categoryId.value = '';
+    elements.categoryModalTitle = document.getElementById('category-modal-title');
+    if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Nueva Categoría';
+    if (elements.categoryModal) elements.categoryModal.classList.add('active');
+  });
+}
 
-elements.closeCategoryBtn.addEventListener('click', closeCategoryModal);
-elements.cancelCategoryBtn.addEventListener('click', closeCategoryModal);
+if (elements.closeCategoryBtn) elements.closeCategoryBtn.addEventListener('click', closeCategoryModal);
+if (elements.cancelCategoryBtn) elements.cancelCategoryBtn.addEventListener('click', closeCategoryModal);
 
 function closeCategoryModal() {
-  elements.categoryModal.classList.remove('active');
+  if (elements.categoryModal) elements.categoryModal.classList.remove('active');
 }
 
 // Render Categories List
@@ -1649,36 +1651,38 @@ window.deleteCategory = async (catId, name) => {
 };
 
 // Handle Category Form Submission
-elements.categoryForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const id = elements.categoryId.value;
-  const name = elements.categoryName.value.trim();
+if (elements.categoryForm) {
+  elements.categoryForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = elements.categoryId ? elements.categoryId.value : '';
+    const name = elements.categoryName ? elements.categoryName.value.trim() : '';
 
-  showLoading(true, 'Guardando categoría...');
-  
-  const categoryData = {
-    name,
-    createdAt: Timestamp.now()
-  };
+    showLoading(true, 'Guardando categoría...');
+    
+    const categoryData = {
+      name,
+      createdAt: Timestamp.now()
+    };
 
-  try {
-    if (id) {
-      // Update
-      await setDoc(doc(db, 'categories', id), categoryData, { merge: true });
-      showToast('Categoría actualizada.', 'success');
-    } else {
-      // Add
-      await addDoc(collection(db, 'categories'), categoryData);
-      showToast('Categoría creada exitosamente.', 'success');
+    try {
+      if (id) {
+        // Update
+        await setDoc(doc(db, 'categories', id), categoryData, { merge: true });
+        showToast('Categoría actualizada.', 'success');
+      } else {
+        // Add
+        await addDoc(collection(db, 'categories'), categoryData);
+        showToast('Categoría creada exitosamente.', 'success');
+      }
+      closeCategoryModal();
+    } catch (err) {
+      console.error("Save category error:", err);
+      showToast('Error al guardar categoría.', 'error');
+    } finally {
+      showLoading(false);
     }
-    closeCategoryModal();
-  } catch (err) {
-    console.error("Save category error:", err);
-    showToast('Error al guardar categoría.', 'error');
-  } finally {
-    showLoading(false);
-  }
-});
+  });
+}
 
 // ==========================================
 // Product Sales Report Controller
