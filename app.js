@@ -489,37 +489,6 @@ function formatAuthCredentials(username, password) {
   return { email, password: paddedPassword };
 }
 
-// Auto-register a default admin account (admin / admin) if it does not exist using secondaryAuth to avoid session hijacking
-async function ensureDefaultAdminUser() {
-  if (!secondaryAuth) {
-    console.warn("SecondaryAuth no inicializado, omitiendo ensureDefaultAdminUser.");
-    return;
-  }
-  const { email, password } = formatAuthCredentials('admin', 'admin');
-  try {
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    const user = userCredential.user;
-    console.log("Admin por defecto registrado en Firebase.");
-    
-    // Also save in Firestore users list
-    await setDoc(doc(db, 'users', user.uid), {
-      username: 'admin',
-      role: 'admin',
-      createdAt: Timestamp.now()
-    });
-    
-    // Sign out secondaryAuth session immediately to clean up state
-    await signOut(secondaryAuth);
-  } catch (err) {
-    if (err.code !== 'auth/email-already-in-use') {
-      console.warn("No se pudo garantizar el admin por defecto:", err.message);
-    }
-  }
-}
-
-// Check for default admin on startup
-ensureDefaultAdminUser();
-
 // Auth State Observer
 onAuthStateChanged(auth, async (user) => {
   authUser = user;
@@ -757,6 +726,41 @@ elements.authForm.addEventListener('submit', async (e) => {
     localStorage.setItem('jwt_token', token);
     
   } catch (err) {
+    // SELF-HEALING: If default admin account does not exist yet and password is correct, auto-register and retry
+    if (username === 'admin' && password === 'admin' && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
+      try {
+        console.log("Creando administrador por defecto...");
+        if (secondaryAuth) {
+          const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, securePassword);
+          const user = userCredential.user;
+          await setDoc(doc(db, 'users', user.uid), {
+            username: 'admin',
+            role: 'admin',
+            createdAt: Timestamp.now()
+          });
+          await signOut(secondaryAuth);
+          
+          // Retry login
+          const retryCred = await signInWithEmailAndPassword(auth, email, securePassword);
+          const retryUser = retryCred.user;
+          
+          // Cache and generate JWT
+          cacheUserForOffline('admin', 'admin', 'admin', retryUser.uid);
+          const payload = {
+            uid: retryUser.uid,
+            username: 'admin',
+            role: 'admin',
+            exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+          };
+          const token = generateJWT(payload);
+          localStorage.setItem('jwt_token', token);
+          return; // Success!
+        }
+      } catch (regErr) {
+        console.error("No se pudo registrar administrador por defecto:", regErr);
+      }
+    }
+
     showLoading(false);
     console.error("Auth Error:", err.code, err.message);
     
