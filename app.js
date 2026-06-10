@@ -140,6 +140,24 @@ function cacheUserForOffline(username, password, role, uid) {
   localStorage.setItem('local_users', JSON.stringify(localUsers));
 }
 
+async function attemptBackgroundOnlineReauth() {
+  if (navigator.onLine && authUser && authUser.isLocalJWT) {
+    const username = authUser.email.split('@')[0];
+    const plainPassword = sessionStorage.getItem('temp_offline_pass');
+    if (plainPassword) {
+      console.log("Intentando re-autenticación automática en línea con Firebase Auth...");
+      const { email, password: securePassword } = formatAuthCredentials(username, plainPassword);
+      try {
+        await signInWithEmailAndPassword(auth, email, securePassword);
+        sessionStorage.removeItem('temp_offline_pass');
+        console.log("Re-autenticación en línea exitosa.");
+      } catch (err) {
+        console.warn("No se pudo re-autenticar automáticamente en línea:", err.message);
+      }
+    }
+  }
+}
+
 // ==========================================================
 // Application State
 // ==========================================
@@ -451,7 +469,10 @@ function updateConnectionStatus() {
     showToast('Sin conexión a internet. Los cambios se guardarán localmente y se sincronizarán al reconectar.', 'info');
   }
 }
-window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('online', () => {
+  updateConnectionStatus();
+  attemptBackgroundOnlineReauth();
+});
 window.addEventListener('offline', updateConnectionStatus);
 
 // ==========================================
@@ -468,11 +489,15 @@ function formatAuthCredentials(username, password) {
   return { email, password: paddedPassword };
 }
 
-// Auto-register a default admin account (admin / admin) if it does not exist
+// Auto-register a default admin account (admin / admin) if it does not exist using secondaryAuth to avoid session hijacking
 async function ensureDefaultAdminUser() {
+  if (!secondaryAuth) {
+    console.warn("SecondaryAuth no inicializado, omitiendo ensureDefaultAdminUser.");
+    return;
+  }
   const { email, password } = formatAuthCredentials('admin', 'admin');
   try {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const user = userCredential.user;
     console.log("Admin por defecto registrado en Firebase.");
     
@@ -482,6 +507,9 @@ async function ensureDefaultAdminUser() {
       role: 'admin',
       createdAt: Timestamp.now()
     });
+    
+    // Sign out secondaryAuth session immediately to clean up state
+    await signOut(secondaryAuth);
   } catch (err) {
     if (err.code !== 'auth/email-already-in-use') {
       console.warn("No se pudo garantizar el admin por defecto:", err.message);
@@ -576,6 +604,7 @@ onAuthStateChanged(auth, async (user) => {
       switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
       
       showLoading(false);
+      attemptBackgroundOnlineReauth();
     } else {
       // Hide app shell, show auth
       elements.appShell.classList.add('hidden');
@@ -660,6 +689,7 @@ elements.authForm.addEventListener('submit', async (e) => {
       };
       const token = generateJWT(payload);
       localStorage.setItem('jwt_token', token);
+      sessionStorage.setItem('temp_offline_pass', password);
       
       authUser = {
         uid: cachedUser.uid,
@@ -898,6 +928,8 @@ function loadAllSalesFallback() {
     });
     updateDashboardMetrics();
     renderHistoryList();
+  }, (error) => {
+    console.error("Sales fallback sync error:", error);
   });
 }
 
