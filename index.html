@@ -153,6 +153,7 @@
           <!-- Segmented subtab switcher -->
           <div class="view-toggle">
             <button class="toggle-btn active" data-subview="products">Productos</button>
+            <button class="toggle-btn" data-subview="categories">Categorías</button>
             <button class="toggle-btn" data-subview="users">Usuarios</button>
           </div>
 
@@ -164,6 +165,20 @@
             </div>
             <div id="inventory-list" class="inventory-list">
               <!-- Dynamic items go here -->
+            </div>
+          </div>
+
+          <!-- Subview: Categories List -->
+          <div id="categories-subview" class="subview-content hidden">
+            <div class="users-list-header">
+              <h4>Categorías / Clases</h4>
+              <button id="add-category-btn" class="btn btn-primary btn-sm">
+                <span class="material-icons">category</span>
+                <span>Nueva Categoría</span>
+              </button>
+            </div>
+            <div id="categories-list" class="users-list">
+              <!-- Dynamic categories list go here -->
             </div>
           </div>
 
@@ -408,7 +423,12 @@
             </div>
             <div class="form-group">
               <label for="prod-category">Categoría*</label>
-              <input type="text" id="prod-category" required placeholder="Ej. Pasteles, Bebidas">
+              <div class="select-wrapper">
+                <select id="prod-category" required>
+                  <!-- Populate dynamically -->
+                </select>
+                <span class="material-icons select-arrow">arrow_drop_down</span>
+              </div>
             </div>
           </div>
 
@@ -438,6 +458,32 @@
         <div class="modal-footer">
           <button type="button" id="cancel-product-btn" class="btn btn-secondary">Cancelar</button>
           <button type="submit" id="save-product-btn" class="btn btn-primary">
+            <span class="material-icons">save</span>
+            <span>Guardar</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CATEGORY EDIT/ADD MODAL -->
+  <div id="category-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="category-modal-title">Nueva Categoría</h3>
+        <button id="close-category-btn" class="btn-icon"><span class="material-icons">close</span></button>
+      </div>
+      <form id="category-form">
+        <input type="hidden" id="category-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="category-name">Nombre de la Categoría*</label>
+            <input type="text" id="category-name" required placeholder="Ej. Pasteles, Bebidas">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="cancel-category-btn" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" id="save-category-btn" class="btn btn-primary">
             <span class="material-icons">save</span>
             <span>Guardar</span>
           </button>

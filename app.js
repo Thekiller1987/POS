@@ -68,6 +68,7 @@ let products = [];
 let cart = [];
 let sales = [];
 let users = [];
+let categories = [];
 let selectedCategory = 'all';
 let searchQueryParams = { pos: '', inventory: '' };
 let activeTab = 'pos';
@@ -78,6 +79,7 @@ let authUser = null;
 let productsUnsubscribe = null;
 let salesUnsubscribe = null;
 let usersUnsubscribe = null;
+let categoriesUnsubscribe = null;
 
 // ==========================================
 // DOM Elements Cache
@@ -184,7 +186,18 @@ const elements = {
   userUsername: document.getElementById('user-username'),
   userPassword: document.getElementById('user-password'),
   userRole: document.getElementById('user-role'),
-  saveUserBtn: document.getElementById('save-user-btn')
+  saveUserBtn: document.getElementById('save-user-btn'),
+
+  // New Categories subview & Modal elements
+  categoriesSubview: document.getElementById('categories-subview'),
+  categoriesList: document.getElementById('categories-list'),
+  addCategoryBtn: document.getElementById('add-category-btn'),
+  categoryModal: document.getElementById('category-modal'),
+  closeCategoryBtn: document.getElementById('close-category-btn'),
+  cancelCategoryBtn: document.getElementById('cancel-category-btn'),
+  categoryForm: document.getElementById('category-form'),
+  categoryName: document.getElementById('category-name'),
+  categoryId: document.getElementById('category-id')
 };
 
 // ==========================================
@@ -484,6 +497,11 @@ function startRealtimeListeners() {
       products.push({ id: doc.id, ...doc.data() });
     });
     
+    // Auto-migrate unique product categories if database categories are empty
+    if (products.length > 0) {
+      migrateCategoriesIfNeeded(products);
+    }
+    
     // Update active UIs
     renderPOSProducts();
     renderInventory();
@@ -540,6 +558,20 @@ function startRealtimeListeners() {
   }, (error) => {
     console.error("Users list sync error:", error);
   });
+
+  // 4. Categories Listener
+  const categoriesQuery = query(collection(db, 'categories'), orderBy('name', 'asc'));
+  categoriesUnsubscribe = onSnapshot(categoriesQuery, (snapshot) => {
+    categories = [];
+    snapshot.forEach((doc) => {
+      categories.push({ id: doc.id, ...doc.data() });
+    });
+    renderCategories();
+    updateProductCategoryDropdown();
+    renderCategoryChips();
+  }, (error) => {
+    console.error("Categories sync error:", error);
+  });
 }
 
 function stopRealtimeListeners() {
@@ -554,6 +586,10 @@ function stopRealtimeListeners() {
   if (usersUnsubscribe) {
     usersUnsubscribe();
     usersUnsubscribe = null;
+  }
+  if (categoriesUnsubscribe) {
+    categoriesUnsubscribe();
+    categoriesUnsubscribe = null;
   }
 }
 
@@ -643,9 +679,11 @@ document.querySelectorAll('.navigate-btn').forEach(btn => {
 // POS / Vender Module
 // ==========================================
 
-// Dynamically compile categories from actual products
+// Dynamically compile categories from Firestore collection and active products
 function renderCategoryChips() {
-  const allCategories = ['all', ...new Set(products.map(p => p.category.trim()).filter(c => c !== ''))];
+  const definedCats = categories.map(c => c.name.trim());
+  const productCats = products.map(p => p.category.trim()).filter(c => c !== '');
+  const allCategories = ['all', ...new Set([...definedCats, ...productCats])];
   
   // Keep active category selected if it still exists, otherwise reset to 'all'
   if (!allCategories.includes(selectedCategory)) {
@@ -1138,7 +1176,20 @@ window.openEditProductModal = (productId) => {
   elements.prodPrice.value = p.price;
   elements.prodCost.value = p.cost || 0;
   elements.prodStock.value = p.stock;
-  elements.prodCategory.value = p.category;
+  
+  // Make sure current category exists in select, otherwise add it as legacy option
+  let selectEl = elements.prodCategory;
+  if (selectEl) {
+    let exists = Array.from(selectEl.options).some(opt => opt.value === p.category);
+    if (!exists && p.category) {
+      let opt = document.createElement('option');
+      opt.value = p.category;
+      opt.textContent = p.category + " (Histórica)";
+      selectEl.appendChild(opt);
+    }
+    selectEl.value = p.category;
+  }
+  
   elements.prodBarcode.value = p.barcode || '';
   
   if (p.image) {
@@ -1364,6 +1415,8 @@ document.querySelectorAll('[data-subview]').forEach(btn => {
     // Run view updates
     if (subview === 'users') {
       renderUsers();
+    } else if (subview === 'categories') {
+      renderCategories();
     } else if (subview === 'reports') {
       renderProductSalesReport();
     }
@@ -1471,6 +1524,162 @@ elements.userForm.addEventListener('submit', async (e) => {
   }
 });
 
+// Auto-migrate unique product categories to the 'categories' collection if empty
+async function migrateCategoriesIfNeeded(productsList) {
+  try {
+    const catsSnapshot = await getDocs(collection(db, 'categories'));
+    if (catsSnapshot.empty) {
+      console.log("Migrando categorías existentes...");
+      const uniqueCategories = [...new Set(productsList.map(p => p.category.trim()).filter(c => c !== ''))];
+      for (const catName of uniqueCategories) {
+        await addDoc(collection(db, 'categories'), {
+          name: catName,
+          createdAt: Timestamp.now()
+        });
+      }
+      console.log("Migración de categorías completada.");
+    }
+  } catch (err) {
+    console.warn("No se pudieron migrar las categorías:", err.message);
+  }
+}
+
+// Update the select dropdown in the product add/edit form
+function updateProductCategoryDropdown() {
+  const selectEl = elements.prodCategory;
+  if (!selectEl) return;
+
+  const currentVal = selectEl.value;
+  
+  // Clear options
+  selectEl.innerHTML = categories.map(cat => `
+    <option value="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</option>
+  `).join('');
+
+  // Add default placeholder if no categories
+  if (categories.length === 0) {
+    selectEl.innerHTML = '<option value="">Crear categorías en la pestaña Categorías</option>';
+  }
+
+  // Restore value if existed, otherwise select first option
+  if (currentVal && categories.some(cat => cat.name === currentVal)) {
+    selectEl.value = currentVal;
+  }
+}
+
+// ==========================================
+// Category Management Controller
+// ==========================================
+elements.addCategoryBtn.addEventListener('click', () => {
+  elements.categoryForm.reset();
+  elements.categoryId.value = '';
+  elements.categoryModalTitle = document.getElementById('category-modal-title');
+  if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Nueva Categoría';
+  elements.categoryModal.classList.add('active');
+});
+
+elements.closeCategoryBtn.addEventListener('click', closeCategoryModal);
+elements.cancelCategoryBtn.addEventListener('click', closeCategoryModal);
+
+function closeCategoryModal() {
+  elements.categoryModal.classList.remove('active');
+}
+
+// Render Categories List
+function renderCategories() {
+  if (categories.length === 0) {
+    elements.categoriesList.innerHTML = `
+      <div class="empty-state">
+        <span class="material-icons">category</span>
+        <p>No hay categorías registradas.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.categoriesList.innerHTML = categories.map(c => `
+    <div class="user-card">
+      <div class="user-card-info">
+        <div class="user-card-icon" style="background: var(--primary-glow); color: var(--primary-light);">
+          <span class="material-icons">category</span>
+        </div>
+        <div class="user-card-name-wrapper">
+          <span class="user-card-name">${escapeHtml(c.name)}</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-icon" onclick="window.openEditCategoryModal('${c.id}')">
+          <span class="material-icons" style="color:var(--primary-light)">edit</span>
+        </button>
+        <button class="btn-icon" onclick="window.deleteCategory('${c.id}', '${escapeHtml(c.name)}')">
+          <span class="material-icons" style="color:var(--danger)">delete</span>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Open Edit Category Modal
+window.openEditCategoryModal = (catId) => {
+  const c = categories.find(cat => cat.id === catId);
+  if (!c) return;
+
+  elements.categoryId.value = c.id;
+  elements.categoryName.value = c.name;
+  
+  elements.categoryModalTitle = document.getElementById('category-modal-title');
+  if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Editar Categoría';
+  elements.categoryModal.classList.add('active');
+};
+
+// Delete Category
+window.deleteCategory = async (catId, name) => {
+  if (confirm(`¿Seguro que deseas eliminar la categoría "${name}"? Los productos que la usan no se eliminarán.`)) {
+    showLoading(true, 'Eliminando categoría...');
+    try {
+      await deleteDoc(doc(db, 'categories', catId));
+      showToast('Categoría eliminada.', 'success');
+    } catch (err) {
+      console.error("Delete category failed:", err);
+      showToast('Error al eliminar categoría.', 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+};
+
+// Handle Category Form Submission
+elements.categoryForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = elements.categoryId.value;
+  const name = elements.categoryName.value.trim();
+
+  showLoading(true, 'Guardando categoría...');
+  
+  const categoryData = {
+    name,
+    createdAt: Timestamp.now()
+  };
+
+  try {
+    if (id) {
+      // Update
+      await setDoc(doc(db, 'categories', id), categoryData, { merge: true });
+      showToast('Categoría actualizada.', 'success');
+    } else {
+      // Add
+      await addDoc(collection(db, 'categories'), categoryData);
+      showToast('Categoría creada exitosamente.', 'success');
+    }
+    closeCategoryModal();
+  } catch (err) {
+    console.error("Save category error:", err);
+    showToast('Error al guardar categoría.', 'error');
+  } finally {
+    showLoading(false);
+  }
+});
+
 // ==========================================
 // Product Sales Report Controller
 // ==========================================
@@ -1485,11 +1694,16 @@ function renderProductSalesReport() {
         productSalesMap[item.name] = {
           name: item.name,
           quantity: 0,
-          revenue: 0
+          revenue: 0,
+          cost: 0,
+          profit: 0
         };
       }
       productSalesMap[item.name].quantity += item.quantity;
       productSalesMap[item.name].revenue += item.price * item.quantity;
+      const itemCost = Number(item.cost || 0);
+      productSalesMap[item.name].cost += itemCost * item.quantity;
+      productSalesMap[item.name].profit += (item.price - itemCost) * item.quantity;
     });
   });
 
@@ -1518,7 +1732,8 @@ function renderProductSalesReport() {
           <span class="report-product-name">${escapeHtml(item.name)}</span>
           <div class="report-product-stats">
             <span class="report-product-qty">${item.quantity} unidades</span>
-            <span class="report-product-revenue">Cobrado: $${item.revenue.toFixed(2)}</span>
+            <span class="report-product-revenue" style="color:var(--text-secondary)">Cobrado: $${item.revenue.toFixed(2)}</span>
+            <span class="report-product-profit" style="color:var(--success); font-weight: 600;">Ganancia: $${item.profit.toFixed(2)}</span>
           </div>
         </div>
         <div class="report-product-bar-wrapper">
