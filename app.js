@@ -157,6 +157,10 @@ const elements = {
   prodStock: document.getElementById('prod-stock'),
   prodCategory: document.getElementById('prod-category'),
   prodBarcode: document.getElementById('prod-barcode'),
+  prodImageInput: document.getElementById('prod-image-input'),
+  imagePreviewPlaceholder: document.getElementById('image-preview-placeholder'),
+  prodImagePreview: document.getElementById('prod-image-preview'),
+  removeImageBtn: document.getElementById('remove-image-btn'),
   
   // History / Reports
   dashRevenue: document.getElementById('dash-revenue'),
@@ -183,6 +187,97 @@ const elements = {
   userPassword: document.getElementById('user-password'),
   saveUserBtn: document.getElementById('save-user-btn')
 };
+
+// ==========================================
+// Image Upload & Compression Logic
+// ==========================================
+let currentProductImageBase64 = '';
+
+// Clear/Reset Image Input and Preview Elements
+function resetImageUploadUI() {
+  currentProductImageBase64 = '';
+  elements.prodImageInput.value = '';
+  elements.prodImagePreview.src = '';
+  elements.prodImagePreview.classList.add('hidden');
+  elements.imagePreviewPlaceholder.classList.remove('hidden');
+  elements.removeImageBtn.classList.add('hidden');
+}
+
+// Compress any image file to Web-friendly Base64 JPEG
+function compressImage(file, maxWidth = 300, maxQuality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Resize dimensions keeping aspect ratio
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxWidth) {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert canvas image to base64 with quality compression
+        const compressedBase64 = canvas.toDataURL('image/jpeg', maxQuality);
+        resolve(compressedBase64);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
+// Trigger hidden file picker when placeholder is clicked
+elements.imagePreviewPlaceholder.addEventListener('click', () => {
+  elements.prodImageInput.click();
+});
+
+// File change listener: reads, compresses, and displays preview
+elements.prodImageInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  showLoading(true, 'Procesando imagen...');
+  try {
+    const base64Data = await compressImage(file, 300, 0.7);
+    currentProductImageBase64 = base64Data;
+    
+    // Set preview source and show it
+    elements.prodImagePreview.src = base64Data;
+    elements.prodImagePreview.classList.remove('hidden');
+    elements.imagePreviewPlaceholder.classList.add('hidden');
+    elements.removeImageBtn.classList.remove('hidden');
+  } catch (err) {
+    console.error("Compression error:", err);
+    showToast('Error al procesar la imagen.', 'error');
+  } finally {
+    showLoading(false);
+  }
+});
+
+// Remove/Reset image button
+elements.removeImageBtn.addEventListener('click', (e) => {
+  e.stopPropagation(); // Avoid triggering file picker click
+  resetImageUploadUI();
+});
+
 
 // ==========================================
 // Toast Notification Utility
@@ -632,6 +727,9 @@ function renderPOSProducts() {
       <div class="product-card ${isOutOfStock ? 'out-of-stock' : ''} ${qtyInCart > 0 ? 'has-items' : ''}" 
            data-id="${p.id}" onclick="this.classList.contains('out-of-stock') ? null : window.addToCart('${p.id}')">
         ${qtyInCart > 0 ? `<div class="card-qty-badge">${qtyInCart}</div>` : ''}
+        <div class="product-card-img-wrapper">
+          ${p.image ? `<img src="${p.image}" class="product-card-img" alt="${escapeHtml(p.name)}">` : `<span class="material-icons product-card-no-img">image</span>`}
+        </div>
         <div class="product-details">
           <span class="product-name">${escapeHtml(p.name)}</span>
           <span class="product-price">$${Number(p.price).toFixed(2)}</span>
@@ -974,6 +1072,7 @@ elements.addProductBtn.addEventListener('click', () => {
   elements.productForm.reset();
   elements.productId.value = '';
   elements.productModalTitle.textContent = 'Agregar Producto';
+  resetImageUploadUI();
   elements.productModal.classList.add('active');
 });
 
@@ -1008,27 +1107,34 @@ function renderInventory() {
 
     return `
       <div class="inventory-card">
-        <div class="inventory-card-details">
-          <span class="inventory-card-name">${escapeHtml(p.name)}</span>
-          <div class="inventory-card-metadata">
-            <span class="inventory-card-meta-item">
-              <span class="material-icons">sell</span>
-              Precio: $${Number(p.price).toFixed(2)}
-            </span>
-            <span class="inventory-card-meta-item">
-              <span class="material-icons">monetization_on</span>
-              Costo: $${Number(p.cost || 0).toFixed(2)}
-            </span>
-            <span class="inventory-card-meta-item">
-              <span class="material-icons">category</span>
-              Cat: ${escapeHtml(p.category)}
-            </span>
-            ${p.barcode ? `
-            <span class="inventory-card-meta-item">
-              <span class="material-icons">qr_code</span>
-              ${escapeHtml(p.barcode)}
-            </span>
-            ` : ''}
+        <div class="inventory-card-main-info">
+          ${p.image ? `<img src="${p.image}" class="inventory-card-thumb" alt="${escapeHtml(p.name)}">` : `
+          <div class="inventory-card-thumb-placeholder">
+            <span class="material-icons">image</span>
+          </div>
+          `}
+          <div class="inventory-card-details">
+            <span class="inventory-card-name">${escapeHtml(p.name)}</span>
+            <div class="inventory-card-metadata">
+              <span class="inventory-card-meta-item">
+                <span class="material-icons">sell</span>
+                Precio: $${Number(p.price).toFixed(2)}
+              </span>
+              <span class="inventory-card-meta-item">
+                <span class="material-icons">monetization_on</span>
+                Costo: $${Number(p.cost || 0).toFixed(2)}
+              </span>
+              <span class="inventory-card-meta-item">
+                <span class="material-icons">category</span>
+                Cat: ${escapeHtml(p.category)}
+              </span>
+              ${p.barcode ? `
+              <span class="inventory-card-meta-item">
+                <span class="material-icons">qr_code</span>
+                ${escapeHtml(p.barcode)}
+              </span>
+              ` : ''}
+            </div>
           </div>
         </div>
         
@@ -1059,6 +1165,16 @@ window.openEditProductModal = (productId) => {
   elements.prodCategory.value = p.category;
   elements.prodBarcode.value = p.barcode || '';
   
+  if (p.image) {
+    currentProductImageBase64 = p.image;
+    elements.prodImagePreview.src = p.image;
+    elements.prodImagePreview.classList.remove('hidden');
+    elements.imagePreviewPlaceholder.classList.add('hidden');
+    elements.removeImageBtn.classList.remove('hidden');
+  } else {
+    resetImageUploadUI();
+  }
+
   elements.productModalTitle.textContent = 'Editar Producto';
   elements.productModal.classList.add('active');
 };
@@ -1104,6 +1220,7 @@ elements.productForm.addEventListener('submit', async (e) => {
     stock,
     category,
     barcode,
+    image: currentProductImageBase64 || '',
     updatedAt: Timestamp.now()
   };
 
@@ -1132,6 +1249,7 @@ elements.cancelProductBtn.addEventListener('click', closeProductModal);
 
 function closeProductModal() {
   elements.productModal.classList.remove('active');
+  resetImageUploadUI();
 }
 
 // ==========================================

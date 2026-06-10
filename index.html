@@ -415,6 +415,21 @@
           </div>
 
           <div class="form-group">
+            <label>Imagen del Producto</label>
+            <div class="image-upload-wrapper">
+              <input type="file" id="prod-image-input" accept="image/*" class="hidden-file-input">
+              <div id="image-preview-placeholder" class="image-preview-placeholder">
+                <span class="material-icons">add_a_photo</span>
+                <span>Subir Foto / Tomar Foto</span>
+              </div>
+              <img id="prod-image-preview" class="prod-image-preview hidden" src="" alt="Previsualización">
+              <button type="button" id="remove-image-btn" class="btn-icon remove-image-btn hidden" title="Eliminar Imagen">
+                <span class="material-icons">delete</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label for="prod-barcode">Código de Barras (Opcional)</label>
             <div class="input-wrapper">
               <span class="material-icons input-icon">qr_code_scanner</span>
