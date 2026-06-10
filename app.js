@@ -71,7 +71,6 @@ let users = [];
 let selectedCategory = 'all';
 let searchQueryParams = { pos: '', inventory: '' };
 let activeTab = 'pos';
-let isRegisterMode = false;
 let currentSalePaymentMethod = 'Efectivo';
 let authUser = null;
 
@@ -100,7 +99,6 @@ const elements = {
   authPassword: document.getElementById('auth-password'),
   authBtn: document.getElementById('auth-btn'),
   authSubtitle: document.getElementById('auth-subtitle'),
-  toggleAuthMode: document.getElementById('toggle-auth-mode'),
   logoutBtn: document.getElementById('logout-btn'),
   connectionText: document.getElementById('connection-text'),
   connectionStatus: document.querySelector('.connection-status'),
@@ -185,6 +183,7 @@ const elements = {
   userForm: document.getElementById('user-form'),
   userUsername: document.getElementById('user-username'),
   userPassword: document.getElementById('user-password'),
+  userRole: document.getElementById('user-role'),
   saveUserBtn: document.getElementById('save-user-btn')
 };
 
@@ -352,11 +351,12 @@ function formatAuthCredentials(username, password) {
 async function ensureDefaultAdminUser() {
   const { email, password } = formatAuthCredentials('admin', 'admin');
   try {
-    await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
     console.log("Admin por defecto registrado en Firebase.");
     
     // Also save in Firestore users list
-    await setDoc(doc(db, 'users', 'admin'), {
+    await setDoc(doc(db, 'users', user.uid), {
       username: 'admin',
       role: 'admin',
       createdAt: Timestamp.now()
@@ -388,7 +388,7 @@ onAuthStateChanged(auth, async (user) => {
     // Self-healing database check: ensure this user exists in Firestore 'users' collection
     try {
       const username = user.email.split('@')[0];
-      const userRef = doc(db, 'users', username);
+      const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
       if (!userDoc.exists()) {
         await setDoc(userRef, {
@@ -423,7 +423,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
-// Handle login/signup form submission
+// Handle login form submission
 elements.authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = elements.authUsername.value;
@@ -434,19 +434,13 @@ elements.authForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  showLoading(true, isRegisterMode ? 'Registrando usuario...' : 'Iniciando sesión...');
+  showLoading(true, 'Iniciando sesión...');
   
   const { email, password: securePassword } = formatAuthCredentials(username, password);
 
   try {
-    if (isRegisterMode) {
-      // Create admin user
-      await createUserWithEmailAndPassword(auth, email, securePassword);
-      showToast('Administrador registrado e ingresado con éxito.', 'success');
-    } else {
-      // Login standard user
-      await signInWithEmailAndPassword(auth, email, securePassword);
-    }
+    // Login standard user
+    await signInWithEmailAndPassword(auth, email, securePassword);
   } catch (err) {
     showLoading(false);
     console.error("Auth Error:", err.code, err.message);
@@ -454,28 +448,10 @@ elements.authForm.addEventListener('submit', async (e) => {
     let errMsg = 'Ocurrió un error al autenticar.';
     if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
       errMsg = 'Usuario o contraseña incorrectos.';
-    } else if (err.code === 'auth/email-already-in-use') {
-      errMsg = 'El nombre de usuario ya está registrado.';
     } else if (err.code === 'auth/network-request-failed') {
       errMsg = 'Error de red. Verifica tu conexión.';
     }
     showToast(errMsg, 'error');
-  }
-});
-
-// Toggle between Login and Signup modes
-elements.toggleAuthMode.addEventListener('click', () => {
-  isRegisterMode = !isRegisterMode;
-  if (isRegisterMode) {
-    elements.authSubtitle.textContent = 'Registrar nueva cuenta de Administrador';
-    elements.authBtn.querySelector('span').textContent = 'Registrar y Entrar';
-    elements.authBtn.querySelector('.material-icons').textContent = 'person_add';
-    elements.toggleAuthMode.textContent = '¿Ya tienes cuenta? Iniciar Sesión';
-  } else {
-    elements.authSubtitle.textContent = 'Inicia sesión para continuar';
-    elements.authBtn.querySelector('span').textContent = 'Ingresar';
-    elements.authBtn.querySelector('.material-icons').textContent = 'login';
-    elements.toggleAuthMode.textContent = '¿Primera vez? Crear Administrador';
   }
 });
 
@@ -1442,6 +1418,7 @@ elements.userForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = elements.userUsername.value.trim().toLowerCase();
   const password = elements.userPassword.value;
+  const role = elements.userRole.value;
 
   if (password.length < 4) {
     showToast('La contraseña debe tener mínimo 4 caracteres.', 'warning');
@@ -1464,13 +1441,14 @@ elements.userForm.addEventListener('submit', async (e) => {
     
     // Register the user credentials using the secondary app instance
     // This creates the user in Firebase Auth without overriding the administrator's logged-in session!
-    await createUserWithEmailAndPassword(secondaryAuth, email, securePassword);
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, securePassword);
+    const newUser = userCredential.user;
     await secondaryAuth.signOut(); // Clean secondary state immediately
 
     // Save in Firestore collection to let us list it in the panel
-    await setDoc(doc(db, 'users', username), {
+    await setDoc(doc(db, 'users', newUser.uid), {
       username: username,
-      role: 'usuario',
+      role: role,
       createdAt: Timestamp.now()
     });
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'el-mamalon-v1';
+const CACHE_NAME = 'el-mamalon-v2';
 const ASSETS = [
   './',
   './index.html',

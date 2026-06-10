@@ -67,9 +67,7 @@
         </button>
       </form>
       
-      <div class="auth-footer">
-        <button type="button" id="toggle-auth-mode" class="btn-link">¿Primera vez? Crear Administrador</button>
-      </div>
+      <!-- No auth-footer since external registration is removed -->
     </div>
   </div>
 
@@ -469,6 +467,16 @@
             <div class="input-wrapper">
               <span class="material-icons input-icon">lock</span>
               <input type="password" id="user-password" required placeholder="Mínimo 4 caracteres" minlength="4" autocomplete="new-password">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="user-role">Rol*</label>
+            <div class="select-wrapper">
+              <select id="user-role" required>
+                <option value="usuario">Cajero / Operador</option>
+                <option value="admin">Administrador</option>
+              </select>
+              <span class="material-icons select-arrow">arrow_drop_down</span>
             </div>
           </div>
         </div>
