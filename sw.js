@@ -1,4 +1,4 @@
-const CACHE_NAME = 'el-mamalon-v4';
+const CACHE_NAME = 'el-mamalon-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -6,7 +6,12 @@ const ASSETS = [
   './app.js',
   './register-sw.js',
   './manifest.json',
-  './icon.svg'
+  './icon.svg',
+  'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js',
+  'https://fonts.googleapis.com/icon?family=Material+Icons',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap'
 ];
 
 // Install Service Worker
@@ -37,8 +42,19 @@ self.addEventListener('activate', (e) => {
 
 // Fetch events
 self.addEventListener('fetch', (e) => {
-  // Only handle GET requests and local assets (ignore chrome extensions or firebase calls)
-  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) {
+  // Only handle GET requests
+  if (e.request.method !== 'GET') {
+    return;
+  }
+
+  // Intercept local assets AND external assets we want to cache (Firebase CDN, Google Fonts, etc.)
+  const url = e.request.url;
+  const shouldIntercept = url.startsWith(self.location.origin) || 
+                          url.includes('firebasejs') || 
+                          url.includes('fonts.googleapis.com') || 
+                          url.includes('fonts.gstatic.com');
+
+  if (!shouldIntercept) {
     return;
   }
 
@@ -47,7 +63,7 @@ self.addEventListener('fetch', (e) => {
       if (cachedResponse) {
         // Return cached, and fetch in background for updates (stale-while-revalidate)
         fetch(e.request).then((networkResponse) => {
-          if (networkResponse.status === 200) {
+          if (networkResponse.status === 200 || networkResponse.type === 'opaque') {
             caches.open(CACHE_NAME).then((cache) => cache.put(e.request, networkResponse));
           }
         }).catch(() => {/* Ignore offline errors */});

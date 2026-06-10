@@ -286,9 +286,8 @@
     </nav>
   </div>
 
-  <!-- CART DRAWER / SIDE SHEET -->
-  <div id="cart-backdrop" class="cart-backdrop"></div>
-  <div id="cart-drawer" class="cart-drawer hidden">
+  <!-- CART DRAWER / SIDE SHEET (NATIVE DIALOG) -->
+  <dialog id="cart-drawer" class="cart-drawer">
     <div class="drawer-header">
       <div class="drawer-title">
         <span class="material-icons">shopping_cart</span>
@@ -324,10 +323,10 @@
         <span class="material-icons font-icon">arrow_forward</span>
       </button>
     </div>
-  </div>
+  </dialog>
 
-  <!-- CHECKOUT MODAL -->
-  <div id="checkout-modal" class="modal-backdrop">
+  <!-- CHECKOUT MODAL (NATIVE DIALOG) -->
+  <dialog id="checkout-modal" class="modern-dialog">
     <div class="modal">
       <div class="modal-header">
         <h3>Procesar Pago</h3>
@@ -388,10 +387,10 @@
         </button>
       </div>
     </div>
-  </div>
+  </dialog>
 
-  <!-- PRODUCT EDIT/ADD MODAL -->
-  <div id="product-modal" class="modal-backdrop">
+  <!-- PRODUCT EDIT/ADD MODAL (NATIVE DIALOG) -->
+  <dialog id="product-modal" class="modern-dialog">
     <div class="modal">
       <div class="modal-header">
         <h3 id="product-modal-title">Agregar Producto</h3>
@@ -464,10 +463,10 @@
         </div>
       </form>
     </div>
-  </div>
+  </dialog>
 
-  <!-- CATEGORY EDIT/ADD MODAL -->
-  <div id="category-modal" class="modal-backdrop">
+  <!-- CATEGORY EDIT/ADD MODAL (NATIVE DIALOG) -->
+  <dialog id="category-modal" class="modern-dialog">
     <div class="modal">
       <div class="modal-header">
         <h3 id="category-modal-title">Nueva Categoría</h3>
@@ -490,10 +489,10 @@
         </div>
       </form>
     </div>
-  </div>
+  </dialog>
 
-  <!-- USER EDIT/ADD MODAL -->
-  <div id="user-modal" class="modal-backdrop">
+  <!-- USER EDIT/ADD MODAL (NATIVE DIALOG) -->
+  <dialog id="user-modal" class="modern-dialog">
     <div class="modal">
       <div class="modal-header">
         <h3>Crear Nuevo Usuario</h3>
@@ -534,8 +533,7 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
+    </dialog>
 
   <!-- SERVICE WORKER REGISTRATION -->
   <script src="register-sw.js"></script>

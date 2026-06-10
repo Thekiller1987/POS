@@ -69,6 +69,78 @@ try {
 const auth = getAuth(app);
 
 // ==========================================
+// JWT & Offline Authentication Helpers
+// ==========================================
+function base64UrlEncode(str) {
+  return btoa(unescape(encodeURIComponent(str)))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(str) {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  return decodeURIComponent(escape(atob(base64)));
+}
+
+function simpleHash(str, secret = 'salt_elmamalon') {
+  let hash = 0;
+  const combined = str + secret;
+  for (let i = 0; i < combined.length; i++) {
+    const char = combined.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash.toString(16);
+}
+
+function generateJWT(payload) {
+  const header = { alg: "HS256", typ: "JWT" };
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const secret = "elmamalon_secret_key";
+  const signatureInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = base64UrlEncode(simpleHash(signatureInput, secret));
+  return `${signatureInput}.${signature}`;
+}
+
+function verifyAndDecodeJWT(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [encodedHeader, encodedPayload, signature] = parts;
+    const secret = "elmamalon_secret_key";
+    const expectedSignature = base64UrlEncode(simpleHash(`${encodedHeader}.${encodedPayload}`, secret));
+    if (signature !== expectedSignature) {
+      console.warn("Firma JWT inválida");
+      return null;
+    }
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (payload.exp && Date.now() > payload.exp) {
+      console.warn("JWT expirado");
+      return null;
+    }
+    return payload;
+  } catch (err) {
+    console.error("Fallo al verificar JWT:", err);
+    return null;
+  }
+}
+
+function cacheUserForOffline(username, password, role, uid) {
+  const localUsers = JSON.parse(localStorage.getItem('local_users') || '{}');
+  localUsers[username] = {
+    passwordHash: simpleHash(password, 'salt_elmamalon'),
+    role: role,
+    uid: uid
+  };
+  localStorage.setItem('local_users', JSON.stringify(localUsers));
+}
+
+// ==========================================================
 // Application State
 // ==========================================
 let products = [];
@@ -208,6 +280,23 @@ const elements = {
   categoryId: document.getElementById('category-id')
 };
 
+// Setup Backdrop click handler to close dialogs natively when clicking outside their contents
+[
+  elements.cartDrawer,
+  elements.checkoutModal,
+  elements.productModal,
+  elements.categoryModal,
+  elements.userModal
+].forEach(dialog => {
+  if (dialog) {
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) {
+        dialog.close();
+      }
+    });
+  }
+});
+
 // ==========================================
 // Image Upload & Compression Logic
 // ==========================================
@@ -330,10 +419,21 @@ function showLoading(show, message = 'Cargando...') {
   if (textEl) textEl.textContent = message;
   
   if (show) {
+    elements.loadingOverlay.style.display = 'flex';
+    elements.loadingOverlay.offsetHeight; // Force reflow
     elements.loadingOverlay.classList.remove('fade-out');
   } else {
     elements.loadingOverlay.classList.add('fade-out');
   }
+}
+
+// Add transitionend listener to completely hide the overlay after fade-out
+if (elements.loadingOverlay) {
+  elements.loadingOverlay.addEventListener('transitionend', () => {
+    if (elements.loadingOverlay.classList.contains('fade-out')) {
+      elements.loadingOverlay.style.display = 'none';
+    }
+  });
 }
 
 // ==========================================
@@ -408,8 +508,8 @@ onAuthStateChanged(auth, async (user) => {
     
     // Self-healing database check: ensure this user exists in Firestore 'users' collection
     let userRole = 'usuario';
+    const username = user.email.split('@')[0];
     try {
-      const username = user.email.split('@')[0];
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
       if (!userDoc.exists()) {
@@ -425,12 +525,21 @@ onAuthStateChanged(auth, async (user) => {
     } catch (dbErr) {
       console.warn("No se pudo guardar/leer el perfil del usuario en Firestore:", dbErr.message);
       // Fallback based on email
-      const username = user.email.split('@')[0];
       userRole = username === 'admin' ? 'admin' : 'usuario';
     }
 
     authUserRole = userRole;
     applyRoleBasedUI(userRole);
+
+    // Generate and save JWT token
+    const payload = {
+      uid: user.uid,
+      username: username,
+      role: userRole,
+      exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+    };
+    const token = generateJWT(payload);
+    localStorage.setItem('jwt_token', token);
 
     // Start Realtime Data Listeners
     startRealtimeListeners();
@@ -442,18 +551,44 @@ onAuthStateChanged(auth, async (user) => {
     showLoading(false);
     showToast(`Bienvenido de vuelta`, 'success');
   } else {
-    console.log("Sin sesión activa.");
-    // Hide app shell, show auth
-    elements.appShell.classList.add('hidden');
-    elements.authView.classList.remove('hidden');
+    console.log("Sin sesión activa en Firebase Auth.");
     
-    // Stop Realtime Data Listeners
-    stopRealtimeListeners();
+    // Check if we have a valid local JWT token to keep local login
+    const savedToken = localStorage.getItem('jwt_token');
+    const payload = savedToken ? verifyAndDecodeJWT(savedToken) : null;
     
-    authUserRole = 'usuario';
-    applyRoleBasedUI('usuario');
-    
-    showLoading(false);
+    if (payload) {
+      console.log("Manteniendo sesión local mediante JWT activo:", payload.username);
+      authUser = {
+        uid: payload.uid,
+        email: `${payload.username}@elmamalon.com`,
+        isLocalJWT: true
+      };
+      authUserRole = payload.role;
+      
+      elements.authView.classList.add('hidden');
+      elements.appShell.classList.remove('hidden');
+      applyRoleBasedUI(authUserRole);
+      
+      startRealtimeListeners();
+      
+      const savedTab = location.hash.replace('#/', '');
+      switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
+      
+      showLoading(false);
+    } else {
+      // Hide app shell, show auth
+      elements.appShell.classList.add('hidden');
+      elements.authView.classList.remove('hidden');
+      
+      // Stop Realtime Data Listeners
+      stopRealtimeListeners();
+      
+      authUserRole = 'usuario';
+      applyRoleBasedUI('usuario');
+      
+      showLoading(false);
+    }
   }
 });
 
@@ -499,7 +634,7 @@ function applyRoleBasedUI(role) {
 // Handle login form submission
 elements.authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const username = elements.authUsername.value;
+  const username = elements.authUsername.value.trim().toLowerCase();
   const password = elements.authPassword.value;
 
   if (password.length < 4) {
@@ -509,11 +644,88 @@ elements.authForm.addEventListener('submit', async (e) => {
 
   showLoading(true, 'Iniciando sesión...');
   
+  // Offline Login Fallback
+  if (!navigator.onLine) {
+    console.log("Iniciando sesión en modo Offline con credenciales cacheadas...");
+    const localUsers = JSON.parse(localStorage.getItem('local_users') || '{}');
+    const cachedUser = localUsers[username];
+    
+    if (cachedUser && cachedUser.passwordHash === simpleHash(password, 'salt_elmamalon')) {
+      // Generate offline JWT
+      const payload = {
+        uid: cachedUser.uid,
+        username: username,
+        role: cachedUser.role,
+        exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+      };
+      const token = generateJWT(payload);
+      localStorage.setItem('jwt_token', token);
+      
+      authUser = {
+        uid: cachedUser.uid,
+        email: `${username}@elmamalon.com`,
+        isLocalJWT: true
+      };
+      authUserRole = cachedUser.role;
+      
+      // Setup app view
+      elements.authView.classList.add('hidden');
+      elements.appShell.classList.remove('hidden');
+      elements.authForm.reset();
+      cart = [];
+      updateCartUI();
+      applyRoleBasedUI(authUserRole);
+      
+      // Start offline database listener
+      startRealtimeListeners();
+      
+      const savedTab = location.hash.replace('#/', '');
+      switchTab(savedTab === 'inventory' || savedTab === 'history' ? savedTab : 'pos');
+      
+      showLoading(false);
+      showToast('Inicio de sesión Offline exitoso (JWT local)', 'success');
+      return;
+    } else {
+      showLoading(false);
+      showToast('Sin conexión a internet y credenciales locales incorrectas o no registradas.', 'error');
+      return;
+    }
+  }
+
   const { email, password: securePassword } = formatAuthCredentials(username, password);
 
   try {
-    // Login standard user
-    await signInWithEmailAndPassword(auth, email, securePassword);
+    // Login standard user in Firebase Auth
+    const userCredential = await signInWithEmailAndPassword(auth, email, securePassword);
+    const user = userCredential.user;
+    
+    // Fetch role to cache it for offline login fallback
+    let userRole = 'usuario';
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        userRole = userDoc.data().role || 'usuario';
+      } else {
+        userRole = username === 'admin' ? 'admin' : 'usuario';
+      }
+    } catch (e) {
+      userRole = username === 'admin' ? 'admin' : 'usuario';
+    }
+    
+    // Cache credentials locally for offline fallback
+    cacheUserForOffline(username, password, userRole, user.uid);
+    
+    // Generate and save JWT token
+    const payload = {
+      uid: user.uid,
+      username: username,
+      role: userRole,
+      exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+    };
+    const token = generateJWT(payload);
+    localStorage.setItem('jwt_token', token);
+    
   } catch (err) {
     showLoading(false);
     console.error("Auth Error:", err.code, err.message);
@@ -532,11 +744,29 @@ elements.authForm.addEventListener('submit', async (e) => {
 elements.logoutBtn.addEventListener('click', () => {
   if (confirm('¿Seguro que deseas cerrar la sesión?')) {
     showLoading(true, 'Cerrando sesión...');
+    localStorage.removeItem('jwt_token'); // Clear JWT!
     signOut(auth)
-      .then(() => showToast('Sesión cerrada correctamente.', 'info'))
-      .catch((err) => {
+      .then(() => {
+        // Clean local state in case we were logged in via local JWT
+        authUser = null;
+        authUserRole = 'usuario';
+        elements.appShell.classList.add('hidden');
+        elements.authView.classList.remove('hidden');
+        stopRealtimeListeners();
+        applyRoleBasedUI('usuario');
         showLoading(false);
-        showToast('Error al cerrar sesión.', 'error');
+        showToast('Sesión cerrada correctamente.', 'info');
+      })
+      .catch((err) => {
+        // Force logout even if signOut fails (e.g. offline)
+        authUser = null;
+        authUserRole = 'usuario';
+        elements.appShell.classList.add('hidden');
+        elements.authView.classList.remove('hidden');
+        stopRealtimeListeners();
+        applyRoleBasedUI('usuario');
+        showLoading(false);
+        showToast('Sesión cerrada localmente.', 'info');
       });
   }
 });
@@ -959,25 +1189,18 @@ window.removeCartItem = (productId) => {
 // Open/Close Cart Drawer
 elements.cartTrigger.addEventListener('click', openCartDrawer);
 elements.closeCartBtn.addEventListener('click', closeCartDrawer);
-elements.cartBackdrop.addEventListener('click', closeCartDrawer);
 
 function openCartDrawer() {
   if (cart.length === 0) return;
-  elements.cartDrawer.classList.remove('hidden');
-  setTimeout(() => {
-    elements.cartBackdrop.classList.add('active');
-    elements.cartDrawer.classList.add('open');
-  }, 10);
+  if (elements.cartDrawer) {
+    elements.cartDrawer.showModal();
+  }
 }
 
 function closeCartDrawer() {
-  elements.cartBackdrop.classList.remove('active');
-  elements.cartDrawer.classList.remove('open');
-  setTimeout(() => {
-    if (!elements.cartDrawer.classList.contains('open')) {
-      elements.cartDrawer.classList.add('hidden');
-    }
-  }, 300);
+  if (elements.cartDrawer) {
+    elements.cartDrawer.close();
+  }
 }
 
 // ==========================================
@@ -1000,7 +1223,7 @@ elements.checkoutBtn.addEventListener('click', () => {
   elements.cashReceived.value = '';
   updateChangeDisplay();
   
-  elements.checkoutModal.classList.add('active');
+  if (elements.checkoutModal) elements.checkoutModal.showModal();
 });
 
 // Select payment method
@@ -1063,10 +1286,10 @@ elements.closeCheckoutBtn.addEventListener('click', closeCheckoutModal);
 elements.cancelCheckoutBtn.addEventListener('click', closeCheckoutModal);
 
 function closeCheckoutModal() {
-  elements.checkoutModal.classList.remove('active');
+  if (elements.checkoutModal) elements.checkoutModal.close();
 }
 
-// Complete Sale Action (Atomic Transaction in Firebase)
+// Complete Sale Action (Atomic Transaction in Firebase with Offline Fallback)
 elements.completeSaleBtn.addEventListener('click', async () => {
   const totalVal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const totalCost = cart.reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0);
@@ -1080,7 +1303,7 @@ elements.completeSaleBtn.addEventListener('click', async () => {
     }
   }
 
-  showLoading(true, 'Registrando venta en Firebase...');
+  showLoading(true, 'Registrando venta...');
   elements.completeSaleBtn.disabled = true;
 
   const saleDoc = {
@@ -1097,55 +1320,96 @@ elements.completeSaleBtn.addEventListener('click', async () => {
     createdAt: Timestamp.now()
   };
 
-  try {
-    // RUN FIREBASE TRANSACTION:
-    // Ensures concurrent safety and atomic database writes. Stock levels decrement dynamically.
-    await runTransaction(db, async (transaction) => {
-      // 1. First get all products to verify and lock their states
-      const productDocs = [];
-      for (const item of cart) {
-        const productRef = doc(db, 'products', item.id);
-        const pDoc = await transaction.get(productRef);
-        
-        if (!pDoc.exists()) {
-          throw new Error(`El producto "${item.name}" ya no existe en el sistema.`);
-        }
-        
-        const dbStock = pDoc.data().stock || 0;
-        if (dbStock < item.quantity) {
-          throw new Error(`Stock insuficiente para "${item.name}". Disponible: ${dbStock}`);
-        }
-        
-        productDocs.push({ ref: productRef, dbStock, quantity: item.quantity });
-      }
-
-      // 2. Queue sales record insertion
-      const saleRef = doc(collection(db, 'sales'));
-      transaction.set(saleRef, saleDoc);
-
-      // 3. Queue stock updates
-      for (const p of productDocs) {
-        transaction.update(p.ref, {
-          stock: p.dbStock - p.quantity,
-          updatedAt: Timestamp.now()
-        });
-      }
-    });
-
-    // Transaction Success
-    showToast('¡Venta realizada con éxito!', 'success');
+  // Helper to complete sale locally in Firestore cache (offline mode)
+  async function completeSaleOfflineFallback() {
+    console.log("Ejecutando registro de venta en modo Offline (local writes)...");
     
-    // Clear cart and UI elements
+    // We write the sale directly to the sales collection
+    const saleRef = doc(collection(db, 'sales'));
+    await setDoc(saleRef, saleDoc);
+    
+    // We update the product stocks directly via setDoc with merge
+    for (const item of cart) {
+      const product = products.find(p => p.id === item.id);
+      if (product) {
+        const productRef = doc(db, 'products', item.id);
+        const newStock = Math.max(0, product.stock - item.quantity);
+        await setDoc(productRef, {
+          stock: newStock,
+          updatedAt: Timestamp.now()
+        }, { merge: true });
+      }
+    }
+  }
+
+  try {
+    if (navigator.onLine) {
+      // RUN FIREBASE TRANSACTION:
+      // Ensures concurrent safety and atomic database writes. Stock levels decrement dynamically.
+      await runTransaction(db, async (transaction) => {
+        // 1. First get all products to verify and lock their states
+        const productDocs = [];
+        for (const item of cart) {
+          const productRef = doc(db, 'products', item.id);
+          const pDoc = await transaction.get(productRef);
+          
+          if (!pDoc.exists()) {
+            throw new Error(`El producto "${item.name}" ya no existe en el sistema.`);
+          }
+          
+          const dbStock = pDoc.data().stock || 0;
+          if (dbStock < item.quantity) {
+            throw new Error(`Stock insuficiente para "${item.name}". Disponible: ${dbStock}`);
+          }
+          
+          productDocs.push({ ref: productRef, dbStock, quantity: item.quantity });
+        }
+
+        // 2. Queue sales record insertion
+        const saleRef = doc(collection(db, 'sales'));
+        transaction.set(saleRef, saleDoc);
+
+        // 3. Queue stock updates
+        for (const p of productDocs) {
+          transaction.update(p.ref, {
+            stock: p.dbStock - p.quantity,
+            updatedAt: Timestamp.now()
+          });
+        }
+      });
+
+      // Transaction Success
+      showToast('¡Venta realizada con éxito! (Online)', 'success');
+    } else {
+      // Offline fallback
+      await completeSaleOfflineFallback();
+      showToast('¡Venta registrada localmente! Se sincronizará automáticamente al detectar conexión.', 'success');
+    }
+
+    // Common success actions
     cart = [];
     updateCartUI();
     closeCheckoutModal();
     renderPOSProducts();
     
-    // Auto-switch to history if desired, or keep at POS
-    // switchTab('history');
   } catch (err) {
-    console.error("Sale transaction failed:", err);
-    showToast(`Error al procesar la venta: ${err.message}`, 'error');
+    console.error("Sale processing failed:", err);
+    // If transaction failed due to network or if we got an offline error, retry offline fallback
+    if (err.message.includes('offline') || err.code === 'unavailable' || err.code === 'failed-precondition' || !navigator.onLine) {
+      try {
+        await completeSaleOfflineFallback();
+        showToast('¡Venta registrada localmente (Offline)! Se sincronizará automáticamente.', 'success');
+        cart = [];
+        updateCartUI();
+        closeCheckoutModal();
+        renderPOSProducts();
+      } catch (fallbackErr) {
+        console.error("Offline fallback failed too:", fallbackErr);
+        showToast(`Error al procesar venta offline: ${fallbackErr.message}`, 'error');
+      }
+    } else {
+      showToast(`Error al procesar la venta: ${err.message}`, 'error');
+    }
   } finally {
     showLoading(false);
     elements.completeSaleBtn.disabled = false;
@@ -1160,7 +1424,7 @@ elements.addProductBtn.addEventListener('click', () => {
   elements.productId.value = '';
   elements.productModalTitle.textContent = 'Agregar Producto';
   resetImageUploadUI();
-  elements.productModal.classList.add('active');
+  if (elements.productModal) elements.productModal.showModal();
 });
 
 // Search in inventory list
@@ -1278,7 +1542,7 @@ window.openEditProductModal = (productId) => {
   }
 
   elements.productModalTitle.textContent = 'Editar Producto';
-  elements.productModal.classList.add('active');
+  if (elements.productModal) elements.productModal.showModal();
 };
 
 // Delete Product Action
@@ -1350,7 +1614,7 @@ elements.closeProductBtn.addEventListener('click', closeProductModal);
 elements.cancelProductBtn.addEventListener('click', closeProductModal);
 
 function closeProductModal() {
-  elements.productModal.classList.remove('active');
+  if (elements.productModal) elements.productModal.close();
   resetImageUploadUI();
 }
 
@@ -1503,14 +1767,14 @@ document.querySelectorAll('[data-subview]').forEach(btn => {
 // ==========================================
 elements.addUserBtn.addEventListener('click', () => {
   elements.userForm.reset();
-  elements.userModal.classList.add('active');
+  if (elements.userModal) elements.userModal.showModal();
 });
 
 elements.closeUserBtn.addEventListener('click', closeUserModal);
 elements.cancelUserBtn.addEventListener('click', closeUserModal);
 
 function closeUserModal() {
-  elements.userModal.classList.remove('active');
+  if (elements.userModal) elements.userModal.close();
 }
 
 // Render Users List
@@ -1651,7 +1915,7 @@ if (elements.addCategoryBtn) {
     if (elements.categoryId) elements.categoryId.value = '';
     elements.categoryModalTitle = document.getElementById('category-modal-title');
     if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Nueva Categoría';
-    if (elements.categoryModal) elements.categoryModal.classList.add('active');
+    if (elements.categoryModal) elements.categoryModal.showModal();
   });
 }
 
@@ -1659,7 +1923,7 @@ if (elements.closeCategoryBtn) elements.closeCategoryBtn.addEventListener('click
 if (elements.cancelCategoryBtn) elements.cancelCategoryBtn.addEventListener('click', closeCategoryModal);
 
 function closeCategoryModal() {
-  if (elements.categoryModal) elements.categoryModal.classList.remove('active');
+  if (elements.categoryModal) elements.categoryModal.close();
 }
 
 // Render Categories List
@@ -1708,7 +1972,7 @@ window.openEditCategoryModal = (catId) => {
   
   elements.categoryModalTitle = document.getElementById('category-modal-title');
   if (elements.categoryModalTitle) elements.categoryModalTitle.textContent = 'Editar Categoría';
-  elements.categoryModal.classList.add('active');
+  if (elements.categoryModal) elements.categoryModal.showModal();
 };
 
 // Delete Category
