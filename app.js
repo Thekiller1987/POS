@@ -277,6 +277,7 @@ const elements = {
   usersList: document.getElementById('users-list'),
   addUserBtn: document.getElementById('add-user-btn'),
   reportsProductsList: document.getElementById('reports-products-list'),
+  reportsCashiersList: document.getElementById('reports-cashiers-list'),
   
   // User Modal
   userModal: document.getElementById('user-modal'),
@@ -879,6 +880,7 @@ function startRealtimeListeners() {
     updateDashboardMetrics();
     renderHistoryList();
     renderProductSalesReport();
+    renderCashierReport();
   }, (error) => {
     console.error("Sales sync error:", error);
     showLoading(false);
@@ -972,6 +974,8 @@ function loadAllSalesFallback() {
     });
     updateDashboardMetrics();
     renderHistoryList();
+    renderProductSalesReport();
+    renderCashierReport();
   }, (error) => {
     console.error("Sales fallback sync error:", error);
   });
@@ -1401,7 +1405,8 @@ elements.completeSaleBtn.addEventListener('click', async () => {
     total: totalVal,
     profit: totalProfit,
     paymentMethod: currentSalePaymentMethod,
-    createdAt: Timestamp.now()
+    createdAt: Timestamp.now(),
+    createdBy: authUser ? (authUser.email ? authUser.email.split('@')[0] : 'desconocido') : 'desconocido'
   };
 
   // Helper to complete sale locally in Firestore cache (offline mode)
@@ -1710,6 +1715,8 @@ elements.historyDateFilter.addEventListener('change', handleHistoryDateFilterCha
 function handleHistoryDateFilterChange() {
   renderHistoryList();
   updateDashboardMetrics();
+  renderProductSalesReport();
+  renderCashierReport();
 }
 
 // Get sales filtered by selection
@@ -2082,12 +2089,10 @@ function updateProductCategoryDropdown() {
     <option value="${escapeHtml(catName)}">${escapeHtml(catName)}</option>
   `).join('');
 
-  // If still no categories, show default generic categories so they can save products immediately
+  // If still no categories, force user to create one first
   if (allUniqueCats.length === 0) {
     selectEl.innerHTML = `
-      <option value="General">General</option>
-      <option value="Pasteles">Pasteles</option>
-      <option value="Bebidas">Bebidas</option>
+      <option value="" disabled selected>Crea una categoría primero</option>
     `;
   }
 
@@ -2278,6 +2283,89 @@ function renderProductSalesReport() {
       </div>
     `;
   }).join('');
+}
+
+// Cashier Sales Report Controller
+function renderCashierReport() {
+  if (!elements.reportsCashiersList) return;
+
+  const filteredSales = getFilteredSales();
+
+  // Group sales by cashier (createdBy field)
+  const cashierMap = {};
+  filteredSales.forEach(sale => {
+    const cashier = sale.createdBy || 'cajero';
+    if (!cashierMap[cashier]) {
+      cashierMap[cashier] = {
+        username: cashier,
+        totalSales: 0,
+        efectivo: 0,
+        tarjeta: 0,
+        transferencia: 0,
+        transactions: 0
+      };
+    }
+    
+    cashierMap[cashier].totalSales += sale.total;
+    cashierMap[cashier].transactions += 1;
+    
+    const method = (sale.paymentMethod || 'Efectivo').toLowerCase();
+    if (method === 'efectivo') {
+      cashierMap[cashier].efectivo += sale.total;
+    } else if (method === 'tarjeta') {
+      cashierMap[cashier].tarjeta += sale.total;
+    } else {
+      cashierMap[cashier].transferencia += sale.total;
+    }
+  });
+
+  const reportData = Object.values(cashierMap);
+  reportData.sort((a, b) => b.totalSales - a.totalSales);
+
+  if (reportData.length === 0) {
+    elements.reportsCashiersList.innerHTML = `
+      <div class="empty-state">
+        <span class="material-icons">query_stats</span>
+        <p>No hay ventas registradas por ningún cajero en este período.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.reportsCashiersList.innerHTML = reportData.map(c => `
+    <div class="user-card" style="flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; margin-bottom: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="user-card-info">
+          <div class="user-card-icon" style="background: var(--accent-purple-glow); color: var(--primary-light);">
+            <span class="material-icons">person</span>
+          </div>
+          <div class="user-card-name-wrapper">
+            <span class="user-card-name" style="text-transform: capitalize;">${escapeHtml(c.username)}</span>
+            <span class="user-card-role">${c.transactions} transacciones</span>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 0.75rem; color: var(--text-secondary); display: block;">Total Vendido</span>
+          <strong style="font-family: 'Outfit', sans-serif; font-size: 1.2rem; color: var(--primary-light);">$${c.totalSales.toFixed(2)}</strong>
+        </div>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px; font-size: 0.8rem;">
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: var(--radius-sm); text-align: center; border: 1px solid rgba(255, 255, 255, 0.03);">
+          <span style="color: var(--text-secondary); font-size: 0.7rem; display: block; margin-bottom: 2px;">Efectivo</span>
+          <strong style="color: var(--success);">$${c.efectivo.toFixed(2)}</strong>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: var(--radius-sm); text-align: center; border: 1px solid rgba(255, 255, 255, 0.03);">
+          <span style="color: var(--text-secondary); font-size: 0.7rem; display: block; margin-bottom: 2px;">Tarjeta</span>
+          <strong style="color: var(--primary-light);">$${c.tarjeta.toFixed(2)}</strong>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: var(--radius-sm); text-align: center; border: 1px solid rgba(255, 255, 255, 0.03);">
+          <span style="color: var(--text-secondary); font-size: 0.7rem; display: block; margin-bottom: 2px;">Transf.</span>
+          <strong style="color: #60a5fa;">$${c.transferencia.toFixed(2)}</strong>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
 // ==========================================

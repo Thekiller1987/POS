@@ -198,6 +198,7 @@
           <div class="view-toggle">
             <button class="toggle-btn active" data-subview="sales">Registro de Ventas</button>
             <button class="toggle-btn" data-subview="reports">Productos Vendidos</button>
+            <button class="toggle-btn" data-subview="cashiers">Corte / Cajeros</button>
           </div>
 
           <!-- Subview: Sales Registration Logs -->
@@ -255,6 +256,17 @@
             </div>
             <div id="reports-products-list" class="reports-products-list">
               <!-- Dynamic sold items rank reports go here -->
+            </div>
+          </div>
+
+          <!-- Subview: Cashier / Register Reports -->
+          <div id="cashiers-subview" class="subview-content hidden">
+            <div class="reports-header">
+              <h3>Ventas por Cajero / Turno</h3>
+              <p>Monto total de ventas acumuladas por cada cajero (Efectivo, Tarjeta, Transferencia) para control de arqueo de caja.</p>
+            </div>
+            <div id="reports-cashiers-list" class="users-list">
+              <!-- Dynamic cashier reports go here -->
             </div>
           </div>
         </div>
